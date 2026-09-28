@@ -35,30 +35,49 @@ work_units:
       - npm test
   - id: todo-api
     repo: back
-    goal: Implement the TODO API against the approved OpenAPI snapshot.
+    stack: python-fastapi
+    goal: Implement the TODO API with Python and FastAPI against the approved OpenAPI snapshot.
     branch: feat/CHG-TODO-001/todo-api
     base_sha: 75c54550c79d5a86ab6685c3de428ff3fd261586
     write_paths:
-      - src/**
+      - pyproject.toml
+      - uv.lock
+      - requirements.lock
+      - app/**
       - openapi/**
       - tests/**
+      - README.md
     depends_on:
       - contract
     verify:
-      - npm test
-      - npm run build
+      - python -m pytest
+      - python -m ruff check .
+      - python -m mypy app
   - id: todo-ui
     repo: front
-    goal: Implement the TODO UI against the approved OpenAPI snapshot.
+    stack: react-typescript
+    goal: Implement the TODO UI with React and TypeScript against the approved OpenAPI snapshot.
     branch: feat/CHG-TODO-001/todo-ui
     base_sha: e9f0fb31c9f72fdf1c3a30923c3d7b62a69d3166
     write_paths:
+      - package.json
+      - package-lock.json
+      - index.html
+      - vite.config.ts
+      - tsconfig.json
+      - tsconfig.app.json
+      - tsconfig.node.json
+      - eslint.config.js
       - src/**
       - tests/**
+      - README.md
     depends_on:
       - contract
     verify:
-      - npm test
+      - npm ci
+      - npm test -- --run
+      - npm run lint
+      - npm run typecheck
       - npm run build
   - id: candidate-integration
     repo: root
