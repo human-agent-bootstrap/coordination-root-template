@@ -17,35 +17,31 @@ prs:
     repo: todo-collab-back
     number: 1
     role: todo-create-api
-    state: draft-review
+    state: review-passed
     base_sha: 75c54550c79d5a86ab6685c3de428ff3fd261586
-    head_sha: b644082aa1d9e92ae10740950aac8c6eb1a3dd38
+    head_sha: accb1cef2bc3358d5c7865541b1abc3a7ac9db3f
     merge_sha: null
-    blocked_by:
-      - root-planning
+    blocked_by: []
 
   - key: front-ui
     repo: todo-collab-front
     number: 1
     role: todo-create-ui
-    state: draft-review
+    state: review-passed
     base_sha: e9f0fb31c9f72fdf1c3a30923c3d7b62a69d3166
-    head_sha: c032c2a9d5412bde383d74beb109e267362a4c04
+    head_sha: 27ec065d46ddead00b4c98468ff658d9751f0252
     merge_sha: null
-    blocked_by:
-      - root-planning
+    blocked_by: []
 
   - key: independent-review
     repo: cross-repository
     number: null
     role: implementation-review
-    state: not-started
+    state: passed
     base_sha: null
-    head_sha: null
+    head_sha: "back@accb1cef2bc3358d5c7865541b1abc3a7ac9db3f,front@27ec065d46ddead00b4c98468ff658d9751f0252"
     merge_sha: null
-    blocked_by:
-      - back-api
-      - front-ui
+    blocked_by: []
 
   - key: root-candidate
     repo: todo-collab-root
