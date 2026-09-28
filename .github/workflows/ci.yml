@@ -1,4 +1,10 @@
-name: Root validation
+name: Coordination validation
+
+# The root validates coordination state only: manifests, ownership, scope, and the
+# exact-SHA candidate. Per-service build and test belong to each service repository's
+# own CI — this workflow cannot know your services' stacks. To run a cross-repo
+# browser E2E here, add root-level tests under e2e/ and copy the per-stack setup
+# steps from examples/todo/ci-snippet.yml.
 
 on:
   pull_request:
@@ -22,40 +28,23 @@ jobs:
           node-version: 26
           cache: npm
       - run: npm ci
-      - if: github.event_name == 'pull_request'
-        run: npx playwright install --with-deps chromium
       - run: npm test
-      - if: github.event_name == 'pull_request'
-        uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
-      - if: github.event_name == 'pull_request'
-        run: uv sync --project services/back --locked --extra dev
-      - if: github.event_name == 'pull_request'
-        run: npm ci --include=dev --prefix services/front
-      - if: github.event_name == 'pull_request'
-        run: npm run build --prefix services/front
-      - if: github.event_name == 'pull_request'
-        run: npm run test:e2e -- --change CHG-TODO-002
-      # Work-unit scope and branch validation applies to the coordination PR, not the merged main snapshot.
+      # Registry and change manifests must agree before anything else is trusted.
+      - run: npm run verify:registry
+      # Work-unit scope applies to the branch under review, not the merged snapshot.
       - if: github.event_name == 'pull_request'
         run: git checkout -B "${{ github.head_ref }}"
       - if: github.event_name == 'pull_request'
         run: node scripts/ci-workflow-check.mjs --branch "${{ github.head_ref }}"
-      # Validate CHG-TODO-002 whenever its candidate is the checked-in submodule snapshot.
-      - name: Detect CHG-TODO-002 candidate snapshot
-        id: todo002
-        shell: bash
-        run: |
-          front=$(git -C services/front rev-parse HEAD)
-          back=$(git -C services/back rev-parse HEAD)
-          if grep -q "sha: $front" changes/CHG-TODO-002/releases/candidate-001.yaml \
-            && grep -q "sha: $back" changes/CHG-TODO-002/releases/candidate-001.yaml; then
-            echo "active=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "active=false" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.todo002.outputs.active == 'true'
-        run: node scripts/verify-candidate.mjs --change CHG-TODO-002
-      - if: steps.todo002.outputs.active != 'true'
-        run: npm run verify:candidate
+      # Verify whichever candidate matches the checked-in submodule snapshot.
+      - run: npm run verify:candidate -- --detect
+      # Opt-in: only runs when this project has root-level cross-repo E2E tests.
+      - id: e2e
+        run: echo "present=${{ hashFiles('e2e/*.test.mjs') != '' }}" >> "$GITHUB_OUTPUT"
+      - if: steps.e2e.outputs.present == 'true'
+        run: npm run test:e2e
+      # The example's own suite runs only while the example is still installed.
+      - id: example
+        run: echo "present=${{ hashFiles('examples/todo/tests/*.test.mjs') != '' }}" >> "$GITHUB_OUTPUT"
+      - if: steps.example.outputs.present == 'true'
+        run: npm run test:example
