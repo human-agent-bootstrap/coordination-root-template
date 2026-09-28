@@ -1,36 +1,36 @@
 change_id: CHG-TODO-002
-state: draft
+state: in-progress
 plan_base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
-plan_merge_sha: null
+plan_merge_sha: 2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0
 prs:
   - key: root-planning
     repo: todo-collab-root
-    number: null
+    number: 4
     role: planning-contract
-    state: draft
+    state: merged
     base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
-    head_sha: pending
-    merge_sha: null
+    head_sha: 6b9a5fa5f86b6d703ff03cc24dae48d56cd22d5c
+    merge_sha: 2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0
     blocked_by: []
 
   - key: back-api
     repo: todo-collab-back
-    number: null
+    number: 1
     role: todo-create-api
-    state: not-started
+    state: draft-review
     base_sha: 75c54550c79d5a86ab6685c3de428ff3fd261586
-    head_sha: null
+    head_sha: b644082aa1d9e92ae10740950aac8c6eb1a3dd38
     merge_sha: null
     blocked_by:
       - root-planning
 
   - key: front-ui
     repo: todo-collab-front
-    number: null
+    number: 1
     role: todo-create-ui
-    state: not-started
+    state: draft-review
     base_sha: e9f0fb31c9f72fdf1c3a30923c3d7b62a69d3166
-    head_sha: null
+    head_sha: c032c2a9d5412bde383d74beb109e267362a4c04
     merge_sha: null
     blocked_by:
       - root-planning

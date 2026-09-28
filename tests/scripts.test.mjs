@@ -203,7 +203,7 @@ test('CHG-TODO-002 planning package declares the accepted vertical slice', () =>
   const status = readFileSync(join(changeDir, 'STATUS.md'), 'utf8');
   const prs = readFileSync(join(changeDir, 'PRS.yaml'), 'utf8');
 
-  assert.match(plan, /Status:\s*DRAFT/);
+  assert.match(plan, /Status:\s*APPROVED/);
   assert.match(plan, /in-memory/i);
   assert.match(plan, /browser-session/i);
   assert.match(plan, /independent Agent review/i);
@@ -216,7 +216,9 @@ test('CHG-TODO-002 planning package declares the accepted vertical slice', () =>
   assert.match(contract, /'201':/);
   assert.match(contract, /'400':/);
   assert.match(contract, /pattern:\s*['"].*\\S.*['"]/);
-  assert.match(status, /State:\*\* DRAFT/);
+  assert.match(status, /State:\*\* IN_PROGRESS/);
+  assert.match(workUnits, /repo: back[\s\S]*write_paths:[\s\S]*- \.gitignore/);
+  assert.match(workUnits, /repo: front[\s\S]*write_paths:[\s\S]*- \.gitignore/);
   assert.match(prs, /role: todo-create-api/);
   assert.match(prs, /role: todo-create-ui/);
   assert.match(prs, /role: candidate-integration/);

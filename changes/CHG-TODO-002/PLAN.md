@@ -2,14 +2,16 @@
 
 ## State
 
-- Status: DRAFT
+- Status: APPROVED
 - Coordinator: `whdvlf94`
 - Required approvers: product owner, Front owner, Back owner
+- Approved plan merge SHA: `2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0`
+- Scope amendment: `.gitignore` is explicitly allowed for both initial child-repository bootstrap work units; requested by the human approver after implementation dispatch.
 - Root base SHA: `960fabbd498b0bb09bad69267439f7291b34426f`
 - Front base SHA: `e9f0fb31c9f72fdf1c3a30923c3d7b62a69d3166`
 - Back base SHA: `75c54550c79d5a86ab6685c3de428ff3fd261586`
 
-`DRAFT` is not implementation authority. Front and Back work starts only after this planning change is approved, merged, and its Root merge SHA is recorded as the plan SHA.
+`APPROVED` authorizes execution only for the declared work units and exact base SHAs. It is not merge or release authority. The `.gitignore` scope amendment above is the only post-merge planning adjustment authorized for the current implementation heads.
 
 ## Problem
 

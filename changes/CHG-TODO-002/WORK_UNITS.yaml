@@ -1,6 +1,7 @@
 change_id: CHG-TODO-002
-state: draft
+state: approved
 plan_base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
+plan_merge_sha: 2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0
 work_units:
   - id: contract-and-plan
     repo: root
@@ -31,6 +32,7 @@ work_units:
       - pyproject.toml
       - uv.lock
       - requirements.lock
+      - .gitignore
       - app/**
       - openapi/**
       - tests/**
@@ -53,6 +55,7 @@ work_units:
     write_paths:
       - package.json
       - package-lock.json
+      - .gitignore
       - index.html
       - vite.config.ts
       - tsconfig.json

@@ -1,6 +1,10 @@
 # Status — CHG-TODO-002
 
-**State:** DRAFT
+**State:** IN_PROGRESS
+
+## Scope amendment
+
+The human approver explicitly required a project-specific `.gitignore` in both child implementation PRs. Root records that one allowed-path amendment here before implementation approval; all other scope remains unchanged.
 
 ## Scope
 
@@ -14,9 +18,9 @@ Create-only vertical slice:
 
 | Work unit | Repository | State | Gate |
 |---|---|---|---|
-| `contract-and-plan` | Root | in review | Product, Front, and Back human approval |
-| `todo-create-api` | Back | not started | Planning PR approved and merged |
-| `todo-create-ui` | Front | not started | Planning PR approved and merged |
+- `contract-and-plan` | Root | merged | Approved plan SHA `2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0` |
+| `todo-create-api` | Back | draft review | PR #1; independent review findings under remediation |
+| `todo-create-ui` | Front | draft review | PR #1; independent review findings under remediation |
 | `independent-review` | Read-only | not started | Both implementation PRs available |
 | `candidate-integration` | Root | not started | Implementation PRs reviewed and human-merged |
 
