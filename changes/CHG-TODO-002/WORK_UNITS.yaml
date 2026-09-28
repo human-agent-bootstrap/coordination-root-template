@@ -11,7 +11,10 @@ work_units:
     writer: coordinator
     write_paths:
       - changes/CHG-TODO-002/**
+      - scripts/ci-workflow-check.mjs
       - tests/scripts.test.mjs
+      - tests/ci-workflow.test.mjs
+      - .github/workflows/ci.yml
     depends_on: []
     verify:
       - npm test

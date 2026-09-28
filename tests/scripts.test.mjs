@@ -224,3 +224,12 @@ test('CHG-TODO-002 planning package declares the accepted vertical slice', () =>
   assert.match(candidate, /state: not-created/);
   assert.doesNotMatch(candidate, /\n\s+sha:\s*[0-9a-f]{40}\s*$/m);
 });
+
+test('CI workflow check derives CHG-TODO-002 coordination scope from the branch', () => {
+  const result = spawnSync(process.execPath, [
+    join(scripts, 'ci-workflow-check.mjs'),
+    '--branch', 'change/CHG-TODO-002/coordination',
+  ], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /CHG-TODO-002\/contract-and-plan/);
+});

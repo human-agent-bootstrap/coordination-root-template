@@ -8,8 +8,8 @@ const workflow = readFileSync(resolve(import.meta.dirname, '../.github/workflows
 test('main pushes skip work-unit branch validation but still verify the candidate', () => {
   assert.match(
     workflow,
-    /if:\s*github\.event_name\s*==\s*['"]pull_request['"][\s\S]*npm run workflow:check/,
-    'workflow:check must be gated to pull_request events because its manifest requires the coordination branch',
+    /if:\s*github\.event_name\s*==\s*['"]pull_request['"][\s\S]*node scripts\/ci-workflow-check\.mjs/,
+    'PR workflow must derive its Change and work unit from the observed branch',
   );
   assert.match(workflow, /npm run verify:candidate/);
 });

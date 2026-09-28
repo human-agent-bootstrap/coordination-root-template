@@ -26,6 +26,6 @@ jobs:
       - if: github.event_name == 'pull_request'
         run: git checkout -B "${{ github.head_ref }}"
       - if: github.event_name == 'pull_request'
-        run: npm run workflow:check -- --expected-branch "${{ github.head_ref }}"
+        run: node scripts/ci-workflow-check.mjs --branch "${{ github.head_ref }}"
       # Candidate SHA validation applies to both PRs and the resulting main snapshot.
       - run: npm run verify:candidate
