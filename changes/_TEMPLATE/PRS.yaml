@@ -1,0 +1,61 @@
+change_id: <CHANGE-ID>
+state: draft
+plan_base_sha: <ROOT_BASE_SHA>
+plan_merge_sha: pending
+prs:
+  - key: root-planning
+    repo: <root-repo>
+    number: null
+    role: planning-contract
+    state: not-started
+    base_sha: <ROOT_BASE_SHA>
+    head_sha: pending
+    merge_sha: null
+    blocked_by: []
+
+  - key: back-impl
+    repo: <back-repo>
+    number: null
+    role: <back-work-unit>
+    state: not-started
+    base_sha: <BACK_BASE_SHA>
+    head_sha: pending
+    merge_sha: null
+    blocked_by:
+      - root-planning
+
+  - key: front-impl
+    repo: <front-repo>
+    number: null
+    role: <front-work-unit>
+    state: not-started
+    base_sha: <FRONT_BASE_SHA>
+    head_sha: pending
+    merge_sha: null
+    blocked_by:
+      - root-planning
+
+  - key: independent-review
+    repo: cross-repository
+    number: null
+    role: implementation-review
+    state: not-started
+    base_sha: null
+    head_sha: null
+    merge_sha: null
+    blocked_by:
+      - back-impl
+      - front-impl
+
+  - key: root-candidate
+    repo: <root-repo>
+    number: null
+    role: candidate-integration
+    state: not-started
+    base_sha: pending-plan-merge
+    head_sha: null
+    merge_sha: null
+    blocked_by:
+      - independent-review
+      - back-impl
+      - front-impl

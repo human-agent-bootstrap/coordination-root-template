@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { findUnit, parseArgs, required } from './lib.mjs';
 
 function fail(message) {
@@ -8,8 +8,12 @@ function fail(message) {
 
 try {
   const options = parseArgs(process.argv.slice(2));
+  if (options['branch-from-git'] && !options.branch) {
+    options.branch = execFileSync('git', ['branch', '--show-current'], { encoding: 'utf8' }).trim();
+    if (!options.branch) throw new Error('detached HEAD: pass --branch explicitly');
+  }
   required(options, 'branch');
-  const match = options.branch.match(/^(?:change|feat|fix)\/(CHG-[A-Za-z0-9-]+)\/([A-Za-z0-9_-]+)$/);
+  const match = options.branch.match(/^(?:change|feat|fix|refactor|test|docs|chore)\/([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9_-]+)$/);
   if (!match) throw new Error(`branch does not identify a Change and work unit: ${options.branch}`);
 
   const [, change, branchUnit] = match;

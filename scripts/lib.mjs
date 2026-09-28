@@ -1,10 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import YAML from 'yaml';
 
 export function fail(message) {
   process.stderr.write(`ERROR: ${message}\n`);
   process.exitCode = 1;
 }
+
+const BOOLEAN_FLAGS = new Set(['apply', 'allow-descendant', 'strict', 'detect', 'branch-from-git', 'with-example']);
 
 export function parseArgs(argv) {
   const options = {};
@@ -12,7 +15,7 @@ export function parseArgs(argv) {
     const token = argv[index];
     if (!token.startsWith('--')) continue;
     const key = token.slice(2);
-    if (key === 'apply' || key === 'allow-descendant') { options[key] = true; continue; }
+    if (BOOLEAN_FLAGS.has(key)) { options[key] = true; continue; }
     const value = argv[index + 1];
     if (!value || value.startsWith('--')) throw new Error(`missing value for --${key}`);
     options[key] = value;
@@ -38,46 +41,45 @@ export function manifestPath(change) {
   return join(process.cwd(), 'changes', change, 'WORK_UNITS.yaml');
 }
 
-function scalar(value) {
-  const trimmed = value.trim();
-  if (trimmed === '[]') return [];
-  return trimmed.replace(/^['"]|['"]$/g, '');
+export function readYaml(path) {
+  if (!existsSync(path)) throw new Error(`missing file: ${path}`);
+  try {
+    return YAML.parse(readFileSync(path, 'utf8')) ?? {};
+  } catch (error) {
+    throw new Error(`invalid YAML in ${path}: ${error.message}`);
+  }
+}
+
+export function registryPath() {
+  return join(process.cwd(), 'services', 'registry.yaml');
+}
+
+export const REPO_SENTINELS = new Set(['root', 'cross-repository']);
+
+export function readRegistry() {
+  const registry = readYaml(registryPath());
+  const services = registry.services ?? [];
+  if (!Array.isArray(services)) throw new Error('registry services must be a list');
+  for (const service of services) {
+    if (!service?.id || !service?.path) throw new Error('every registry service needs id and path');
+  }
+  return { version: registry.version ?? 1, services };
+}
+
+export function readChangeManifest(change) {
+  const manifest = readYaml(manifestPath(change));
+  const units = manifest.work_units ?? [];
+  if (!Array.isArray(units)) throw new Error(`work_units must be a list in ${manifestPath(change)}`);
+  for (const unit of units) {
+    unit.write_paths ??= [];
+    unit.depends_on ??= [];
+    unit.verify ??= [];
+  }
+  return { ...manifest, work_units: units };
 }
 
 export function readWorkUnits(change) {
-  const path = manifestPath(change);
-  if (!existsSync(path)) throw new Error(`missing manifest: ${path}`);
-  const lines = readFileSync(path, 'utf8').split(/\r?\n/);
-  const units = [];
-  let current;
-  let activeList;
-  for (const raw of lines) {
-    const indent = raw.match(/^\s*/)[0].length;
-    const line = raw.trim();
-    if (!line || line.startsWith('#') || line === 'work_units:') continue;
-    if (indent === 2 && line.startsWith('- id:')) {
-      current = { id: scalar(line.slice(5)), write_paths: [], depends_on: [], verify: [] };
-      units.push(current);
-      activeList = null;
-      continue;
-    }
-    if (!current) continue;
-    if (indent === 4 && line.endsWith(':')) {
-      activeList = line.slice(0, -1);
-      continue;
-    }
-    if (indent >= 6 && line.startsWith('- ') && activeList) {
-      current[activeList] ??= [];
-      current[activeList].push(scalar(line.slice(2)));
-      continue;
-    }
-    if (indent === 4 && line.includes(':')) {
-      const [key, ...rest] = line.split(':');
-      current[key.trim()] = scalar(rest.join(':'));
-      activeList = null;
-    }
-  }
-  return units;
+  return readChangeManifest(change).work_units;
 }
 
 export function findUnit(change, id) {

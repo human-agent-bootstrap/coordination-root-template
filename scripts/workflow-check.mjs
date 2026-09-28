@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fail, findUnit, parseArgs, required } from './lib.mjs';
 
@@ -20,8 +20,10 @@ try {
   if (branch !== expectedBranch) throw new Error(`branch mismatch: expected ${expectedBranch}, found ${branch || '(detached HEAD)'}`);
   const head = git(['rev-parse', 'HEAD'], repoPath);
   if (unit.base_sha && head !== unit.base_sha && !options['allow-descendant']) {
-    const isDescendant = execFileSync('git', ['merge-base', '--is-ancestor', unit.base_sha, head], { cwd: repoPath });
-    if (isDescendant !== undefined) throw new Error(`base range evidence required: HEAD ${head} descends from ${unit.base_sha}; rerun with --allow-descendant after recording validation evidence`);
+    const ancestry = spawnSync('git', ['merge-base', '--is-ancestor', unit.base_sha, head], { cwd: repoPath });
+    if (ancestry.status !== 0) {
+      throw new Error(`base mismatch: HEAD ${head} does not descend from base_sha ${unit.base_sha}`);
+    }
   }
   const changed = [...new Set([
     ...lines(git(['diff', '--name-only', `${unit.base_sha}...HEAD`], repoPath)),

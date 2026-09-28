@@ -1,0 +1,14 @@
+change_id: CHG-TMPL-001
+state: in-progress
+plan_base_sha: 62bf5ea32b0f3ab6427bfbf099f3d6bafd37701e
+plan_merge_sha: pending
+prs:
+  - key: template-extraction
+    repo: root
+    number: null
+    role: template-extraction
+    state: local-only
+    base_sha: 62bf5ea32b0f3ab6427bfbf099f3d6bafd37701e
+    head_sha: pending
+    merge_sha: null
+    blocked_by: []

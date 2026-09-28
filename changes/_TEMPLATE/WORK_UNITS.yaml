@@ -1,0 +1,90 @@
+change_id: <CHANGE-ID>
+state: draft
+plan_base_sha: <ROOT_BASE_SHA>
+plan_merge_sha: pending
+work_units:
+  - id: contract-and-plan
+    repo: root
+    stack: root-coordination
+    goal: Approve the scope, contract, work boundaries, and verification gates.
+    branch: change/<CHANGE-ID>/coordination
+    base_sha: <ROOT_BASE_SHA>
+    writer: coordinator
+    write_paths:
+      - changes/<CHANGE-ID>/**
+    depends_on: []
+    verify:
+      - npm test
+      - node scripts/workflow-check.mjs --change <CHANGE-ID> --unit contract-and-plan --allow-descendant
+
+  - id: <back-work-unit>
+    repo: back
+    stack: python-fastapi
+    goal: Implement the Back slice against the approved OpenAPI contract.
+    branch: feat/<CHANGE-ID>/<back-work-unit>
+    base_sha: <BACK_BASE_SHA>
+    writer: back-writer
+    write_paths:
+      - app/**
+      - tests/**
+    depends_on:
+      - contract-and-plan
+    verify:
+      - python -m pytest
+      - python -m ruff check .
+      - python -m mypy app
+
+  - id: <front-work-unit>
+    repo: front
+    stack: react-typescript
+    goal: Implement the Front slice against the approved OpenAPI contract.
+    branch: feat/<CHANGE-ID>/<front-work-unit>
+    base_sha: <FRONT_BASE_SHA>
+    writer: front-writer
+    write_paths:
+      - src/**
+      - tests/**
+    depends_on:
+      - contract-and-plan
+    verify:
+      - npm ci
+      - npm test -- --run
+      - npm run lint
+      - npm run typecheck
+      - npm run build
+
+  - id: independent-review
+    repo: cross-repository
+    stack: read-only-review
+    goal: Independently review each implementation PR for scope, contract fidelity, defects, and verification evidence.
+    branch: none
+    base_sha: approved implementation PR heads
+    writer: review-agent
+    write_paths: []
+    depends_on:
+      - <back-work-unit>
+      - <front-work-unit>
+    verify:
+      - report findings with priority, confidence, file and line evidence
+      - do not edit, approve, merge, or change settings
+
+  - id: candidate-integration
+    repo: root
+    stack: exact-sha-integration
+    goal: Pin human-approved Front and Back merge SHAs and verify the exact candidate combination.
+    branch: change/<CHANGE-ID>/candidate-integration
+    base_sha: pending-plan-merge
+    writer: coordinator
+    write_paths:
+      - changes/<CHANGE-ID>/PRS.yaml
+      - changes/<CHANGE-ID>/STATUS.md
+      - changes/<CHANGE-ID>/releases/**
+      - services/front
+      - services/back
+    depends_on:
+      - independent-review
+      - <back-work-unit>
+      - <front-work-unit>
+    verify:
+      - npm test
+      - node scripts/verify-candidate.mjs --change <CHANGE-ID>
