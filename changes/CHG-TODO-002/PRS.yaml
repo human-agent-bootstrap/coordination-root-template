@@ -17,20 +17,20 @@ prs:
     repo: todo-collab-back
     number: 1
     role: todo-create-api
-    state: review-passed
+    state: merged
     base_sha: 75c54550c79d5a86ab6685c3de428ff3fd261586
     head_sha: accb1cef2bc3358d5c7865541b1abc3a7ac9db3f
-    merge_sha: null
+    merge_sha: 4530e5d500557d46dfcdcc6c101f6163af0017db
     blocked_by: []
 
   - key: front-ui
     repo: todo-collab-front
     number: 1
     role: todo-create-ui
-    state: review-passed
+    state: merged
     base_sha: e9f0fb31c9f72fdf1c3a30923c3d7b62a69d3166
     head_sha: 27ec065d46ddead00b4c98468ff658d9751f0252
-    merge_sha: null
+    merge_sha: c33b5990dbca3379597deb02aa2bbb746de01dd3
     blocked_by: []
 
   - key: independent-review
@@ -47,11 +47,8 @@ prs:
     repo: todo-collab-root
     number: null
     role: candidate-integration
-    state: not-started
-    base_sha: pending-plan-merge
-    head_sha: null
+    state: in-progress
+    base_sha: 29ce2b0a32c47c05544002c6fafea44147300db0
+    head_sha: pending
     merge_sha: null
-    blocked_by:
-      - independent-review
-      - back-api
-      - front-ui
+    blocked_by: []

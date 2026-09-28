@@ -3,11 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "description": "Coordination baseline for the TODO multi-repository demo.",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "bootstrap": "node scripts/bootstrap.mjs",
     "workflow:check": "node scripts/workflow-check.mjs --change CHG-TODO-001 --unit coordination --allow-descendant",
-    "verify:candidate": "node scripts/verify-candidate.mjs --change CHG-TODO-001"
+    "verify:candidate": "node scripts/verify-candidate.mjs --change CHG-TODO-001",
+    "test:e2e": "node --test e2e/*.test.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
   }
 }

@@ -1,22 +1,22 @@
 change_id: CHG-TODO-002
 candidate: 1
-state: not-created
-plan_sha: pending-planning-merge
+state: validating
+plan_sha: 2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0
 services:
   - repo: front
     path: services/front
-    sha: pending-human-approved-merge
-    source_pr: null
+    sha: c33b5990dbca3379597deb02aa2bbb746de01dd3
+    source_pr: 1
   - repo: back
     path: services/back
-    sha: pending-human-approved-merge
-    source_pr: null
+    sha: 4530e5d500557d46dfcdcc6c101f6163af0017db
+    source_pr: 1
 verification:
-  root_tests: not-run
-  candidate_sha_check: not-run
-  back_checks: not-run
-  front_checks: not-run
-  browser_e2e: not-run
+  root_tests: passed
+  candidate_sha_check: passed
+  back_checks: passed
+  front_checks: passed
+  browser_e2e: passed
 approval:
-  independent_review: pending
+  independent_review: passed
   human_candidate_approval: pending
