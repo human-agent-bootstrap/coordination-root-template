@@ -229,7 +229,7 @@ test('CI workflow check derives CHG-TODO-002 coordination scope from the branch'
   const dir = mkdtempSync(join(tmpdir(), 'todo-collab-ci-check-'));
   try {
     execFileSync('git', ['clone', '-q', '--no-hardlinks', root, dir]);
-    execFileSync('git', ['checkout', '-q', 'change/CHG-TODO-002/coordination'], { cwd: dir });
+    execFileSync('git', ['checkout', '-q', '-B', 'change/CHG-TODO-002/coordination', 'HEAD'], { cwd: dir });
     const result = spawnSync(process.execPath, [
       join(dir, 'scripts', 'ci-workflow-check.mjs'),
       '--branch', 'change/CHG-TODO-002/coordination',
