@@ -21,11 +21,29 @@ jobs:
         with:
           node-version: 26
           cache: npm
+      - run: npm ci
+      - if: github.event_name == 'pull_request'
+        run: npx playwright install --with-deps chromium
       - run: npm test
+      - if: github.event_name == 'pull_request'
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - if: github.event_name == 'pull_request'
+        run: uv sync --project services/back --locked --extra dev
+      - if: github.event_name == 'pull_request'
+        run: npm ci --include=dev --prefix services/front
+      - if: github.event_name == 'pull_request'
+        run: npm run build --prefix services/front
+      - if: github.event_name == 'pull_request'
+        run: npm run test:e2e -- --change CHG-TODO-002
       # Work-unit scope and branch validation applies to the coordination PR, not the merged main snapshot.
       - if: github.event_name == 'pull_request'
         run: git checkout -B "${{ github.head_ref }}"
       - if: github.event_name == 'pull_request'
         run: node scripts/ci-workflow-check.mjs --branch "${{ github.head_ref }}"
       # Candidate SHA validation applies to both PRs and the resulting main snapshot.
-      - run: npm run verify:candidate
+      - if: github.event_name == 'pull_request'
+        run: node scripts/verify-candidate.mjs --change CHG-TODO-002
+      - if: github.event_name == 'push'
+        run: npm run verify:candidate

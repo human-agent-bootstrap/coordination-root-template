@@ -115,9 +115,10 @@ work_units:
     stack: exact-sha-integration
     goal: Pin human-approved Front and Back merge SHAs and verify the exact candidate combination.
     branch: change/CHG-TODO-002/candidate-integration
-    base_sha: plan merge SHA to be recorded after planning approval
+    base_sha: 29ce2b0a32c47c05544002c6fafea44147300db0
     writer: coordinator
     write_paths:
+      - changes/CHG-TODO-002/WORK_UNITS.yaml
       - changes/CHG-TODO-002/PRS.yaml
       - changes/CHG-TODO-002/STATUS.md
       - changes/CHG-TODO-002/releases/**
@@ -125,6 +126,7 @@ work_units:
       - services/back
       - package.json
       - package-lock.json
+      - .gitignore
       - scripts/**
       - tests/**
       - e2e/**

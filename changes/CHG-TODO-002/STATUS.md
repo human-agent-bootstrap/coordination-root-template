@@ -19,10 +19,10 @@ Create-only vertical slice:
 | Work unit | Repository | State | Gate |
 |---|---|---|---|
 | `contract-and-plan` | Root | merged | Approved plan SHA `2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0` |
-| `todo-create-api` | Back | review passed | PR #1 at `accb1cef2bc3358d5c7865541b1abc3a7ac9db3f`; awaiting human merge decision |
-| `todo-create-ui` | Front | review passed | PR #1 at `27ec065d46ddead00b4c98468ff658d9751f0252`; awaiting human merge decision |
-| `independent-review` | Read-only | passed | Final verdict: SHIP for both current heads |
-| `candidate-integration` | Root | not started | Implementation PRs reviewed and human-merged |
+| `todo-create-api` | Back | merged | PR #1 merge SHA `4530e5d500557d46dfcdcc6c101f6163af0017db` |
+| `todo-create-ui` | Front | merged | PR #1 merge SHA `c33b5990dbca3379597deb02aa2bbb746de01dd3` |
+| `independent-review` | Read-only | passed | Final verdict: SHIP for both reviewed heads |
+| `candidate-integration` | Root | verified | Candidate 001 passed exact-SHA Root, child, contract, and API/browser-origin checks; awaiting human approval |
 
 ## Evidence boundary
 
@@ -32,9 +32,10 @@ Create-only vertical slice:
 - Back base SHA: `75c54550c79d5a86ab6685c3de428ff3fd261586`
 - Front implementation head: `27ec065d46ddead00b4c98468ff658d9751f0252`; local checks, remote CI, and final independent review passed.
 - Back implementation head: `accb1cef2bc3358d5c7865541b1abc3a7ac9db3f`; local checks, remote CI, full served OpenAPI parity, and final independent review passed.
-- No implementation PR has been human-merged yet.
-- No candidate, release, or deployment claim exists yet.
+- Both implementation PRs were human-merged and their `main` push CI runs passed.
+- Candidate 001 currently pins Front `c33b5990dbca3379597deb02aa2bbb746de01dd3` and Back `4530e5d500557d46dfcdcc6c101f6163af0017db`.
+- No candidate approval, release, or deployment claim exists yet.
 
 ## Next gate
 
-Merge this Root scope-amendment PR, then humans review and decide whether to merge the Front and Back implementation PRs. Candidate integration starts only after both implementation merges.
+Run review of the Root candidate PR and decide whether to approve the exact Front/Back SHA combination. Production release remains out of scope.
