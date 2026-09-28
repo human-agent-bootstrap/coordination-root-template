@@ -1,0 +1,6 @@
+[submodule "services/front"]
+	path = services/front
+	url = https://github.com/human-agent-bootstrap/todo-collab-front.git
+[submodule "services/back"]
+	path = services/back
+	url = https://github.com/human-agent-bootstrap/todo-collab-back.git

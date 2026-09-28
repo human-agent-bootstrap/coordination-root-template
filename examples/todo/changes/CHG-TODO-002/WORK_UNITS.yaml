@@ -4,6 +4,7 @@ plan_base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
 plan_merge_sha: 2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0
 work_units:
   - id: contract-and-plan
+    state: merged
     repo: root
     stack: root-coordination
     goal: Approve the create-only product slice, OpenAPI contract, work boundaries, and verification gates.
@@ -22,6 +23,7 @@ work_units:
       - node scripts/workflow-check.mjs --change CHG-TODO-002 --unit contract-and-plan --expected-branch change/CHG-TODO-002/coordination --allow-descendant
 
   - id: scope-amendment
+    state: merged
     repo: root
     stack: root-coordination
     goal: Record the human-approved .gitignore scope amendment and observed implementation PR state.
@@ -41,6 +43,7 @@ work_units:
       - node scripts/ci-workflow-check.mjs --branch change/CHG-TODO-002/scope-amendment
 
   - id: main-candidate-ci
+    state: merged
     repo: root
     stack: root-coordination
     goal: Route default-branch candidate validation to the active CHG-TODO-002 snapshot.
@@ -60,7 +63,29 @@ work_units:
       - npm test
       - node scripts/verify-candidate.mjs --change CHG-TODO-002
 
+  - id: agent-starter-template
+    repo: root
+    stack: root-coordination
+    goal: Publish the tool-neutral agent contract and change skeleton so any agent or operator follows the same procedure.
+    branch: change/CHG-TODO-002/agent-starter-template
+    base_sha: 62bf5ea32b0f3ab6427bfbf099f3d6bafd37701e
+    writer: coordinator
+    write_paths:
+      - AGENTS.md
+      - CLAUDE.md
+      - README.md
+      - changes/_TEMPLATE/**
+      - changes/CHG-TODO-002/WORK_UNITS.yaml
+      - scripts/**
+      - tests/**
+    depends_on:
+      - candidate-integration
+    verify:
+      - npm test
+      - node scripts/ci-workflow-check.mjs --branch change/CHG-TODO-002/agent-starter-template
+
   - id: todo-create-api
+    state: merged
     repo: back
     stack: python-fastapi
     goal: Implement POST /todos with in-memory storage against the approved OpenAPI contract.
@@ -85,6 +110,7 @@ work_units:
       - python -m mypy app
 
   - id: todo-create-ui
+    state: merged
     repo: front
     stack: react-typescript
     goal: Implement the TODO creation form and browser-session result list against the approved OpenAPI contract.
@@ -115,6 +141,7 @@ work_units:
       - npm run build
 
   - id: independent-review
+    state: complete
     repo: cross-repository
     stack: read-only-review
     goal: Independently review each implementation PR for scope, contract fidelity, defects, and verification evidence.
@@ -131,6 +158,7 @@ work_units:
       - do not edit, approve, merge, or change settings
 
   - id: candidate-integration
+    state: merged
     repo: root
     stack: exact-sha-integration
     goal: Pin human-approved Front and Back merge SHAs and verify the exact candidate combination.
