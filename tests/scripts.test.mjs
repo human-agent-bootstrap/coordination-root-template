@@ -182,3 +182,15 @@ test('OpenAPI contract rejects blank titles and empty PATCH bodies', () => {
   assert.match(contract, /pattern:\s*['"].*\\S.*['"]/);
   assert.match(contract, /minProperties:\s*1/);
 });
+
+test('work units declare FastAPI Back and React TypeScript Front verification', () => {
+  const workUnits = readFileSync(join(root, 'changes/CHG-TODO-001/WORK_UNITS.yaml'), 'utf8');
+  assert.match(workUnits, /repo: back\n\s+stack: python-fastapi/);
+  assert.match(workUnits, /python -m pytest/);
+  assert.match(workUnits, /python -m ruff check \./);
+  assert.match(workUnits, /python -m mypy app/);
+  assert.match(workUnits, /repo: front\n\s+stack: react-typescript/);
+  assert.match(workUnits, /npm test -- --run/);
+  assert.match(workUnits, /npm run typecheck/);
+  assert.match(workUnits, /npm run build/);
+});
