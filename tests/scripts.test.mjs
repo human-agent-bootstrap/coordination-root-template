@@ -362,3 +362,16 @@ test('init removes the template\'s own change records but keeps the skeleton', (
     assert.doesNotMatch(readFileSync(join(dir, 'README.md'), 'utf8'), /<PROJECT-NAME>|<ORG>/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('candidate verification reports an all-digit SHA as a mismatch, not as missing', () => {
+  const dir = fixture();
+  try {
+    initServices(dir, ['front', 'back']);
+    // YAML parses a 40-digit SHA as the number 0, which a falsy check would misreport.
+    writeCandidate(dir, 'CHG-FIXTURE-001', [{ repo: 'front', path: 'services/front', sha: '0'.repeat(40) }]);
+    const result = run('verify-candidate.mjs', ['--change', 'CHG-FIXTURE-001'], dir);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /SHA mismatch/);
+    assert.doesNotMatch(result.stderr, /needs path and sha/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

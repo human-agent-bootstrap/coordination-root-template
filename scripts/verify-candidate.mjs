@@ -78,7 +78,11 @@ try {
     if (!registered) {
       throw new Error(`candidate service ${id} is not in services/registry.yaml (known: ${[...registry.keys()].join(', ')})`);
     }
-    if (!service.path || !service.sha) throw new Error(`candidate service ${id} needs path and sha`);
+    // A 40-digit SHA parses as a number, so test for absence rather than falsiness.
+    const declared = (value) => value !== undefined && value !== null && String(value) !== '';
+    if (!declared(service.path) || !declared(service.sha)) {
+      throw new Error(`candidate service ${id} needs path and sha`);
+    }
     if (service.path !== registered.path) {
       throw new Error(`candidate service ${id} must use path ${registered.path}, got ${service.path}`);
     }
