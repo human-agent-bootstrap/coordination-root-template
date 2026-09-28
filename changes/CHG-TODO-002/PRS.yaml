@@ -1,51 +1,47 @@
 change_id: CHG-TODO-002
-state: draft
+state: in-progress
 plan_base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
-plan_merge_sha: null
+plan_merge_sha: 2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0
 prs:
   - key: root-planning
     repo: todo-collab-root
-    number: null
+    number: 4
     role: planning-contract
-    state: draft
+    state: merged
     base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
-    head_sha: pending
-    merge_sha: null
+    head_sha: 6b9a5fa5f86b6d703ff03cc24dae48d56cd22d5c
+    merge_sha: 2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0
     blocked_by: []
 
   - key: back-api
     repo: todo-collab-back
-    number: null
+    number: 1
     role: todo-create-api
-    state: not-started
+    state: review-passed
     base_sha: 75c54550c79d5a86ab6685c3de428ff3fd261586
-    head_sha: null
+    head_sha: accb1cef2bc3358d5c7865541b1abc3a7ac9db3f
     merge_sha: null
-    blocked_by:
-      - root-planning
+    blocked_by: []
 
   - key: front-ui
     repo: todo-collab-front
-    number: null
+    number: 1
     role: todo-create-ui
-    state: not-started
+    state: review-passed
     base_sha: e9f0fb31c9f72fdf1c3a30923c3d7b62a69d3166
-    head_sha: null
+    head_sha: 27ec065d46ddead00b4c98468ff658d9751f0252
     merge_sha: null
-    blocked_by:
-      - root-planning
+    blocked_by: []
 
   - key: independent-review
     repo: cross-repository
     number: null
     role: implementation-review
-    state: not-started
+    state: passed
     base_sha: null
-    head_sha: null
+    head_sha: "back@accb1cef2bc3358d5c7865541b1abc3a7ac9db3f,front@27ec065d46ddead00b4c98468ff658d9751f0252"
     merge_sha: null
-    blocked_by:
-      - back-api
-      - front-ui
+    blocked_by: []
 
   - key: root-candidate
     repo: todo-collab-root
