@@ -40,6 +40,23 @@ work_units:
       - npm test
       - node scripts/ci-workflow-check.mjs --branch change/CHG-TODO-002/scope-amendment
 
+  - id: main-candidate-ci
+    repo: root
+    stack: root-coordination
+    goal: Route default-branch candidate validation to the active CHG-TODO-002 snapshot.
+    branch: fix/CHG-TODO-002/main-candidate-ci
+    base_sha: 38144d755bcb3053cc85e15a4f2d3b88f52e9ddc
+    writer: coordinator
+    write_paths:
+      - .github/workflows/ci.yml
+      - changes/CHG-TODO-002/WORK_UNITS.yaml
+      - tests/ci-workflow.test.mjs
+    depends_on:
+      - candidate-integration
+    verify:
+      - npm test
+      - node scripts/verify-candidate.mjs --change CHG-TODO-002
+
   - id: todo-create-api
     repo: back
     stack: python-fastapi

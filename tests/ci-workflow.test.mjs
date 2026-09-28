@@ -5,11 +5,8 @@ import test from 'node:test';
 
 const workflow = readFileSync(resolve(import.meta.dirname, '../.github/workflows/ci.yml'), 'utf8');
 
-test('main pushes skip work-unit branch validation but still verify the candidate', () => {
-  assert.match(
-    workflow,
-    /if:\s*github\.event_name\s*==\s*['"]pull_request['"][\s\S]*node scripts\/ci-workflow-check\.mjs/,
-    'PR workflow must derive its Change and work unit from the observed branch',
-  );
-  assert.match(workflow, /npm run verify:candidate/);
+test('main pushes detect and verify the checked-in candidate snapshot', () => {
+  assert.match(workflow, /Detect CHG-TODO-002 candidate snapshot/);
+  assert.match(workflow, /steps\.todo002\.outputs\.active == 'true'[\s\S]*verify-candidate\.mjs --change CHG-TODO-002/);
+  assert.match(workflow, /steps\.todo002\.outputs\.active != 'true'[\s\S]*npm run verify:candidate/);
 });
