@@ -226,10 +226,15 @@ test('CHG-TODO-002 planning package declares the accepted vertical slice', () =>
 });
 
 test('CI workflow check derives CHG-TODO-002 coordination scope from the branch', () => {
-  const result = spawnSync(process.execPath, [
-    join(scripts, 'ci-workflow-check.mjs'),
-    '--branch', 'change/CHG-TODO-002/coordination',
-  ], { cwd: root, encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /CHG-TODO-002\/contract-and-plan/);
+  const dir = mkdtempSync(join(tmpdir(), 'todo-collab-ci-check-'));
+  try {
+    execFileSync('git', ['clone', '-q', '--no-hardlinks', root, dir]);
+    execFileSync('git', ['checkout', '-q', 'change/CHG-TODO-002/coordination'], { cwd: dir });
+    const result = spawnSync(process.execPath, [
+      join(dir, 'scripts', 'ci-workflow-check.mjs'),
+      '--branch', 'change/CHG-TODO-002/coordination',
+    ], { cwd: dir, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /CHG-TODO-002\/contract-and-plan/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
