@@ -21,6 +21,25 @@ work_units:
       - npm test
       - node scripts/workflow-check.mjs --change CHG-TODO-002 --unit contract-and-plan --expected-branch change/CHG-TODO-002/coordination --allow-descendant
 
+  - id: scope-amendment
+    repo: root
+    stack: root-coordination
+    goal: Record the human-approved .gitignore scope amendment and observed implementation PR state.
+    branch: change/CHG-TODO-002/scope-amendment
+    base_sha: 2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0
+    writer: coordinator
+    write_paths:
+      - changes/CHG-TODO-002/PLAN.md
+      - changes/CHG-TODO-002/WORK_UNITS.yaml
+      - changes/CHG-TODO-002/STATUS.md
+      - changes/CHG-TODO-002/PRS.yaml
+      - tests/scripts.test.mjs
+    depends_on:
+      - contract-and-plan
+    verify:
+      - npm test
+      - node scripts/ci-workflow-check.mjs --branch change/CHG-TODO-002/scope-amendment
+
   - id: todo-create-api
     repo: back
     stack: python-fastapi
