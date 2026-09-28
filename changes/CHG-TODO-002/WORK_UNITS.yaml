@@ -1,0 +1,117 @@
+change_id: CHG-TODO-002
+state: draft
+plan_base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
+work_units:
+  - id: contract-and-plan
+    repo: root
+    stack: root-coordination
+    goal: Approve the create-only product slice, OpenAPI contract, work boundaries, and verification gates.
+    branch: change/CHG-TODO-002/coordination
+    base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
+    writer: coordinator
+    write_paths:
+      - changes/CHG-TODO-002/**
+      - scripts/ci-workflow-check.mjs
+      - tests/scripts.test.mjs
+      - tests/ci-workflow.test.mjs
+      - .github/workflows/ci.yml
+    depends_on: []
+    verify:
+      - npm test
+      - node scripts/workflow-check.mjs --change CHG-TODO-002 --unit contract-and-plan --expected-branch change/CHG-TODO-002/coordination --allow-descendant
+
+  - id: todo-create-api
+    repo: back
+    stack: python-fastapi
+    goal: Implement POST /todos with in-memory storage against the approved OpenAPI contract.
+    branch: feat/CHG-TODO-002/todo-create-api
+    base_sha: 75c54550c79d5a86ab6685c3de428ff3fd261586
+    writer: back-agent
+    write_paths:
+      - pyproject.toml
+      - uv.lock
+      - requirements.lock
+      - app/**
+      - openapi/**
+      - tests/**
+      - README.md
+      - .github/workflows/**
+    depends_on:
+      - contract-and-plan
+    verify:
+      - python -m pytest
+      - python -m ruff check .
+      - python -m mypy app
+
+  - id: todo-create-ui
+    repo: front
+    stack: react-typescript
+    goal: Implement the TODO creation form and browser-session result list against the approved OpenAPI contract.
+    branch: feat/CHG-TODO-002/todo-create-ui
+    base_sha: e9f0fb31c9f72fdf1c3a30923c3d7b62a69d3166
+    writer: front-agent
+    write_paths:
+      - package.json
+      - package-lock.json
+      - index.html
+      - vite.config.ts
+      - tsconfig.json
+      - tsconfig.app.json
+      - tsconfig.node.json
+      - eslint.config.js
+      - src/**
+      - tests/**
+      - README.md
+      - .github/workflows/**
+    depends_on:
+      - contract-and-plan
+    verify:
+      - npm ci
+      - npm test -- --run
+      - npm run lint
+      - npm run typecheck
+      - npm run build
+
+  - id: independent-review
+    repo: cross-repository
+    stack: read-only-review
+    goal: Independently review each implementation PR for scope, contract fidelity, defects, and verification evidence.
+    branch: none
+    base_sha: approved implementation PR heads
+    writer: review-agent
+    write_paths: []
+    depends_on:
+      - todo-create-api
+      - todo-create-ui
+    verify:
+      - report findings with priority, confidence, file and line evidence
+      - report separate correctness and specification verdicts
+      - do not edit, approve, merge, or change settings
+
+  - id: candidate-integration
+    repo: root
+    stack: exact-sha-integration
+    goal: Pin human-approved Front and Back merge SHAs and verify the exact candidate combination.
+    branch: change/CHG-TODO-002/candidate-integration
+    base_sha: plan merge SHA to be recorded after planning approval
+    writer: coordinator
+    write_paths:
+      - changes/CHG-TODO-002/PRS.yaml
+      - changes/CHG-TODO-002/STATUS.md
+      - changes/CHG-TODO-002/releases/**
+      - services/front
+      - services/back
+      - package.json
+      - package-lock.json
+      - scripts/**
+      - tests/**
+      - e2e/**
+      - .github/workflows/**
+    depends_on:
+      - independent-review
+      - todo-create-api
+      - todo-create-ui
+    verify:
+      - npm test
+      - node scripts/verify-candidate.mjs --change CHG-TODO-002
+      - npm run test:e2e -- --change CHG-TODO-002

@@ -1,0 +1,61 @@
+change_id: CHG-TODO-002
+state: draft
+plan_base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
+plan_merge_sha: null
+prs:
+  - key: root-planning
+    repo: todo-collab-root
+    number: null
+    role: planning-contract
+    state: draft
+    base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
+    head_sha: pending
+    merge_sha: null
+    blocked_by: []
+
+  - key: back-api
+    repo: todo-collab-back
+    number: null
+    role: todo-create-api
+    state: not-started
+    base_sha: 75c54550c79d5a86ab6685c3de428ff3fd261586
+    head_sha: null
+    merge_sha: null
+    blocked_by:
+      - root-planning
+
+  - key: front-ui
+    repo: todo-collab-front
+    number: null
+    role: todo-create-ui
+    state: not-started
+    base_sha: e9f0fb31c9f72fdf1c3a30923c3d7b62a69d3166
+    head_sha: null
+    merge_sha: null
+    blocked_by:
+      - root-planning
+
+  - key: independent-review
+    repo: cross-repository
+    number: null
+    role: implementation-review
+    state: not-started
+    base_sha: null
+    head_sha: null
+    merge_sha: null
+    blocked_by:
+      - back-api
+      - front-ui
+
+  - key: root-candidate
+    repo: todo-collab-root
+    number: null
+    role: candidate-integration
+    state: not-started
+    base_sha: pending-plan-merge
+    head_sha: null
+    merge_sha: null
+    blocked_by:
+      - independent-review
+      - back-api
+      - front-ui

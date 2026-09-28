@@ -1,0 +1,22 @@
+change_id: CHG-TODO-002
+candidate: 1
+state: not-created
+plan_sha: pending-planning-merge
+services:
+  - repo: front
+    path: services/front
+    sha: pending-human-approved-merge
+    source_pr: null
+  - repo: back
+    path: services/back
+    sha: pending-human-approved-merge
+    source_pr: null
+verification:
+  root_tests: not-run
+  candidate_sha_check: not-run
+  back_checks: not-run
+  front_checks: not-run
+  browser_e2e: not-run
+approval:
+  independent_review: pending
+  human_candidate_approval: pending
