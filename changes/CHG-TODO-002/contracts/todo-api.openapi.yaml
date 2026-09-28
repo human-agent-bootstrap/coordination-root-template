@@ -1,0 +1,95 @@
+openapi: 3.1.0
+info:
+  title: TODO API — CHG-TODO-002
+  version: 0.1.0
+  description: Approved draft contract for the create-only collaboration pilot.
+servers:
+  - url: http://127.0.0.1:8000
+paths:
+  /todos:
+    post:
+      operationId: createTodo
+      summary: Create a TODO in process memory
+      description: The server trims the title before validation and storage. Created records are lost when the server restarts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TodoCreate'
+            examples:
+              valid:
+                value:
+                  title: Buy milk
+      responses:
+        '201':
+          description: TODO created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+              examples:
+                created:
+                  value:
+                    id: 0d2e24a3-83f4-4aad-9d2f-32cf9047fb8a
+                    title: Buy milk
+                    completed: false
+        '400':
+          description: The title is missing, blank after trimming, or longer than 100 characters after trimming.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidTitle:
+                  value:
+                    code: INVALID_TITLE
+                    message: title must contain 1 to 100 characters after trimming
+components:
+  schemas:
+    TodoCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - title
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+          pattern: '.*\S.*'
+          description: The server trims surrounding whitespace before checking the 1–100 character constraint.
+    Todo:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - completed
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Opaque server-generated identifier.
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        completed:
+          type: boolean
+          const: false
+          description: New TODOs are incomplete in this create-only Change.
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum:
+            - INVALID_TITLE
+        message:
+          type: string
+          minLength: 1

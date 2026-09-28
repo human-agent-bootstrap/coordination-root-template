@@ -194,3 +194,33 @@ test('work units declare FastAPI Back and React TypeScript Front verification', 
   assert.match(workUnits, /npm run typecheck/);
   assert.match(workUnits, /npm run build/);
 });
+
+test('CHG-TODO-002 planning package declares the accepted vertical slice', () => {
+  const changeDir = join(root, 'changes/CHG-TODO-002');
+  const plan = readFileSync(join(changeDir, 'PLAN.md'), 'utf8');
+  const workUnits = readFileSync(join(changeDir, 'WORK_UNITS.yaml'), 'utf8');
+  const contract = readFileSync(join(changeDir, 'contracts/todo-api.openapi.yaml'), 'utf8');
+  const status = readFileSync(join(changeDir, 'STATUS.md'), 'utf8');
+  const prs = readFileSync(join(changeDir, 'PRS.yaml'), 'utf8');
+
+  assert.match(plan, /Status:\s*DRAFT/);
+  assert.match(plan, /in-memory/i);
+  assert.match(plan, /browser-session/i);
+  assert.match(plan, /independent Agent review/i);
+  assert.match(workUnits, /id: todo-create-api[\s\S]*stack: python-fastapi/);
+  assert.match(workUnits, /id: todo-create-ui[\s\S]*stack: react-typescript/);
+  assert.match(workUnits, /id: independent-review/);
+  assert.match(workUnits, /id: candidate-integration/);
+  assert.match(contract, /\/todos:/);
+  assert.match(contract, /post:/);
+  assert.match(contract, /'201':/);
+  assert.match(contract, /'400':/);
+  assert.match(contract, /pattern:\s*['"].*\\S.*['"]/);
+  assert.match(status, /State:\*\* DRAFT/);
+  assert.match(prs, /role: todo-create-api/);
+  assert.match(prs, /role: todo-create-ui/);
+  assert.match(prs, /role: candidate-integration/);
+  const candidate = readFileSync(join(changeDir, 'releases/candidate-001.yaml'), 'utf8');
+  assert.match(candidate, /state: not-created/);
+  assert.doesNotMatch(candidate, /\n\s+sha:\s*[0-9a-f]{40}\s*$/m);
+});
