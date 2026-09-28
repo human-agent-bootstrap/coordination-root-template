@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fail, parseArgs, readYaml, required } from './lib.mjs';
 
 const PLACEHOLDER_FILES = ['README.md', 'QUICKSTART.md', 'package.json'];
-const EXAMPLE_REF_FILES = ['README.md', 'AGENTS.md', 'QUICKSTART.md'];
+const EXAMPLE_REF_FILES = ['README.md', 'AGENTS.md', 'QUICKSTART.md', 'USAGE.md'];
 const EXAMPLE_BLOCK = /[^\n]*<!-- example:start -->\n[\s\S]*?<!-- example:end -->[^\n]*\n?/g;
 const EXAMPLE_DIR = 'examples/todo';
 

@@ -1,0 +1,36 @@
+change_id: CHG-TMPL-001
+state: approved
+plan_base_sha: 62bf5ea32b0f3ab6427bfbf099f3d6bafd37701e
+plan_merge_sha: pending
+work_units:
+  - id: template-extraction
+    repo: root
+    stack: root-coordination
+    goal: Separate the reusable framework from the TODO instance and make a fresh project green.
+    branch: change/CHG-TMPL-001/template-extraction
+    base_sha: 62bf5ea32b0f3ab6427bfbf099f3d6bafd37701e
+    writer: coordinator
+    # Wide by necessity: this change restructures the repository. Declared up front.
+    write_paths:
+      - AGENTS.md
+      - CLAUDE.md
+      - USAGE.md
+      - README.md
+      - QUICKSTART.md
+      - WORKFLOW.md
+      - .gitignore
+      - .gitmodules
+      - package.json
+      - package-lock.json
+      - changes/**
+      - examples/**
+      - scripts/**
+      - services/**
+      - tests/**
+      - .github/workflows/ci.yml
+    depends_on: []
+    verify:
+      - npm test
+      - npm run test:example
+      - npm run verify:registry
+      - node scripts/ci-workflow-check.mjs --branch change/CHG-TMPL-001/template-extraction
