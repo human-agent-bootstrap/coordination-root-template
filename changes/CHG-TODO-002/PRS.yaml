@@ -1,5 +1,5 @@
 change_id: CHG-TODO-002
-state: in-progress
+state: complete
 plan_base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
 plan_merge_sha: 2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0
 prs:
@@ -11,6 +11,16 @@ prs:
     base_sha: 960fabbd498b0bb09bad69267439f7291b34426f
     head_sha: 6b9a5fa5f86b6d703ff03cc24dae48d56cd22d5c
     merge_sha: 2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0
+    blocked_by: []
+
+  - key: root-scope-amendment
+    repo: todo-collab-root
+    number: 5
+    role: scope-amendment
+    state: merged
+    base_sha: 2ccb7dda6732cd71d3b87b2a89024a008a3ea8f0
+    head_sha: adb6e36eef227673539bf776541f019bd6713d99
+    merge_sha: 29ce2b0a32c47c05544002c6fafea44147300db0
     blocked_by: []
 
   - key: back-api
@@ -45,10 +55,20 @@ prs:
 
   - key: root-candidate
     repo: todo-collab-root
-    number: null
+    number: 6
     role: candidate-integration
-    state: in-progress
+    state: merged
     base_sha: 29ce2b0a32c47c05544002c6fafea44147300db0
-    head_sha: pending
-    merge_sha: null
+    head_sha: 0f4215613e61acc0c359971ef14fa87b5e1ab8cd
+    merge_sha: 38144d755bcb3053cc85e15a4f2d3b88f52e9ddc
+    blocked_by: []
+
+  - key: root-main-candidate-ci
+    repo: todo-collab-root
+    number: 7
+    role: post-merge-candidate-routing
+    state: merged
+    base_sha: 38144d755bcb3053cc85e15a4f2d3b88f52e9ddc
+    head_sha: e4bb7a2854d30da157b0695d510bfc9b617e6b30
+    merge_sha: 2f8fa56b7dda665cf7d4b205c9838d5de7b95aad
     blocked_by: []

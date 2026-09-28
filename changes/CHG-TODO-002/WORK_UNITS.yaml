@@ -50,7 +50,10 @@ work_units:
     write_paths:
       - .github/workflows/ci.yml
       - changes/CHG-TODO-002/WORK_UNITS.yaml
+      - changes/CHG-TODO-002/PRS.yaml
+      - changes/CHG-TODO-002/STATUS.md
       - tests/ci-workflow.test.mjs
+      - tests/scripts.test.mjs
     depends_on:
       - candidate-integration
     verify:
