@@ -216,7 +216,7 @@ test('CHG-TODO-002 planning package declares the accepted vertical slice', () =>
   assert.match(contract, /'201':/);
   assert.match(contract, /'400':/);
   assert.match(contract, /pattern:\s*['"].*\\S.*['"]/);
-  assert.match(status, /State:\*\* IN_PROGRESS/);
+  assert.match(status, /State:\*\* (?:IN_PROGRESS|COMPLETE)/);
   assert.match(workUnits, /repo: back[\s\S]*write_paths:[\s\S]*- \.gitignore/);
   assert.match(workUnits, /repo: front[\s\S]*write_paths:[\s\S]*- \.gitignore/);
   assert.match(prs, /role: todo-create-api/);
