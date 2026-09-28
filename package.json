@@ -1,19 +1,27 @@
 {
-  "name": "todo-collab-root",
+  "name": "<PROJECT-NAME>",
   "version": "0.1.0",
   "private": true,
-  "description": "Coordination baseline for the TODO multi-repository demo.",
+  "description": "Coordination root for agent-assisted multi-repository work.",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
+    "test:example": "node --test examples/todo/tests/*.test.mjs",
+    "init": "node scripts/init-project.mjs",
+    "service:add": "node scripts/service-add.mjs",
+    "change:create": "node scripts/change-create.mjs",
     "bootstrap": "node scripts/bootstrap.mjs",
-    "workflow:check": "node scripts/workflow-check.mjs --change CHG-TODO-001 --unit coordination --allow-descendant",
-    "verify:candidate": "node scripts/verify-candidate.mjs --change CHG-TODO-001",
+    "workflow:check": "node scripts/ci-workflow-check.mjs --branch-from-git",
+    "verify:registry": "node scripts/verify-registry.mjs",
+    "verify:candidate": "node scripts/verify-candidate.mjs",
     "test:e2e": "node --test e2e/*.test.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
   }
 }
