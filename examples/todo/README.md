@@ -36,6 +36,12 @@ npm run test:example
 For the browser E2E, copy the steps in `ci-snippet.yml` into your CI and run
 `npm run test:e2e -- --change CHG-TODO-002` locally with both services installed.
 
+## Prefer to do it yourself?
+
+[`../TUTORIAL.md`](../TUTORIAL.md) walks you through the same cycle from scratch with two
+throwaway local services — no GitHub account needed, and three deliberate failures so you
+see what the tooling actually blocks.
+
 ## Read it without installing
 
 - `changes/CHG-TODO-002/PLAN.md` — goal, non-goals, acceptance criteria, stop conditions

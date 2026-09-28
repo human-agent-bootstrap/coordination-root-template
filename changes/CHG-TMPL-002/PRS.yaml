@@ -1,0 +1,61 @@
+change_id: CHG-TMPL-002
+state: draft
+plan_base_sha: b62bc0516e72f972d3c42490933ff426e8c1b146
+plan_merge_sha: pending
+prs:
+  - key: root-planning
+    repo: <root-repo>
+    number: null
+    role: planning-contract
+    state: not-started
+    base_sha: b62bc0516e72f972d3c42490933ff426e8c1b146
+    head_sha: pending
+    merge_sha: null
+    blocked_by: []
+
+  - key: back-impl
+    repo: <back-repo>
+    number: null
+    role: <back-work-unit>
+    state: not-started
+    base_sha: pending-submodule-not-initialized
+    head_sha: pending
+    merge_sha: null
+    blocked_by:
+      - root-planning
+
+  - key: front-impl
+    repo: <front-repo>
+    number: null
+    role: <front-work-unit>
+    state: not-started
+    base_sha: pending-submodule-not-initialized
+    head_sha: pending
+    merge_sha: null
+    blocked_by:
+      - root-planning
+
+  - key: independent-review
+    repo: cross-repository
+    number: null
+    role: implementation-review
+    state: not-started
+    base_sha: null
+    head_sha: null
+    merge_sha: null
+    blocked_by:
+      - back-impl
+      - front-impl
+
+  - key: root-candidate
+    repo: <root-repo>
+    number: null
+    role: candidate-integration
+    state: not-started
+    base_sha: pending-plan-merge
+    head_sha: null
+    merge_sha: null
+    blocked_by:
+      - independent-review
+      - back-impl
+      - front-impl
