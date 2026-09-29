@@ -39,7 +39,7 @@ npm run bootstrap -- --change CHG-<NAME>-001 --unit <work-unit> --writer <name> 
 | [WORKFLOW.md](./WORKFLOW.md) | The process: change → work units → review → candidate |
 | [QUICKSTART.md](./QUICKSTART.md) | Local validation commands |
 <!-- example:start -->
-| [examples/TUTORIAL.md](./examples/TUTORIAL.md) | 직접 따라하며 한 사이클을 돌려보는 실습 (한글) |
+| [examples/TUTORIAL.md](./examples/TUTORIAL.md) | 실제 submodule로 한 사이클을 직접 돌려보는 실습 (한글) |
 | [examples/todo](./examples/todo) | A complete worked run of the whole cycle |
 <!-- example:end -->
 

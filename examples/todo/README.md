@@ -39,8 +39,9 @@ For the browser E2E, copy the steps in `ci-snippet.yml` into your CI and run
 ## Prefer to do it yourself?
 
 [`../TUTORIAL.md`](../TUTORIAL.md) walks you through the same cycle from scratch with two
-throwaway local services — no GitHub account needed, and three deliberate failures so you
-see what the tooling actually blocks.
+throwaway GitHub repositories wired in as submodules — including the squash merge that makes
+a PR's head SHA differ from its merge SHA, and three deliberate failures so you see what the
+tooling actually blocks.
 
 ## Read it without installing
 
