@@ -55,11 +55,11 @@ test.afterAll(async () => {
 
 test('meeting flow previews and saves a Change, then keeps dispatch approval-gated', async ({ page }) => {
   await page.goto(origin);
-  await expect(page.getByRole('heading', { name: '변경 계획 만들기' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '협업 계획 세우기' })).toBeVisible();
   await expect(page.getByText('main', { exact: true })).toBeVisible();
   await expect(page.getByText('CHG-EXISTING-001', { exact: true })).toBeVisible();
 
-  await page.getByLabel('변경 계획 ID').fill('CHG-BROWSER-001');
+  await page.getByLabel('계획 ID').first().fill('CHG-BROWSER-001');
   await page.getByLabel('계획 제목').fill('브라우저 계획');
   await page.getByLabel('진행자').fill('jpyoon');
   await page.getByLabel('완료했을 때 달라지는 점').fill('회의 결과를 작업 문서로 저장한다.');
@@ -81,15 +81,15 @@ test('meeting flow previews and saves a Change, then keeps dispatch approval-gat
   await page.getByRole('button', { name: '다음: 검토하고 저장하기' }).click();
 
   await page.getByRole('button', { name: '계획 검토하기' }).click();
-  await expect(page.locator('#validation-summary')).toContainText('검증 통과');
+  await expect(page.locator('#validation-summary')).toContainText('검사 통과');
   await expect(page.getByRole('tab', { name: 'WORK_UNITS.yaml' })).toBeVisible();
-  await page.getByRole('button', { name: '새 변경 계획 저장' }).click();
-  await expect(page.getByText('Change를 저장했습니다.')).toBeVisible();
+  await page.getByRole('button', { name: '새 계획 저장' }).click();
+  await expect(page.getByText('계획을 저장했습니다.')).toBeVisible();
   assert.equal(existsSync(join(root, 'changes/CHG-BROWSER-001/WORK_UNITS.yaml')), true);
 
   await page.getByRole('button', { name: '승인된 계획으로 작업 시작' }).click();
   await page.getByLabel('계획 커밋 SHA').fill('a'.repeat(40));
-  await page.getByLabel('변경 ID', { exact: true }).fill('CHG-BROWSER-001');
+  await page.getByLabel('계획 ID').last().fill('CHG-BROWSER-001');
   await page.getByRole('button', { name: '시작할 수 있는 작업 확인' }).click();
   await expect(page.locator('#dispatch-result')).toContainText('승인된 계획');
 });

@@ -68,11 +68,11 @@ async function loadStatus() {
       item.textContent = id;
       return item;
     })
-    : [document.createTextNode('아직 생성된 Change가 없습니다.')]
+    : [document.createTextNode('아직 만든 계획이 없습니다.')]
   ));
   const serviceList = document.querySelector('#service-list');
   if (!state.status.services.length) {
-    serviceList.innerHTML = '<span class="help">등록된 서비스가 없습니다. 서비스 등록은 기존 CLI에서 먼저 진행하세요.</span>';
+    serviceList.innerHTML = '<span class="help">등록된 서비스가 없습니다. 먼저 기존 CLI에서 서비스를 등록해 주세요.</span>';
     return;
   }
   serviceList.replaceChildren(...state.status.services.map((service) => {
@@ -82,7 +82,7 @@ async function loadStatus() {
     input.name = 'services';
     input.value = service.id;
     input.setAttribute('aria-label', service.id);
-    label.append(input, document.createTextNode(`${service.id} · ${service.stack || 'stack 미지정'}`));
+    label.append(input, document.createTextNode(`${service.id} · ${service.stack || '기술 스택 미지정'}`));
     return label;
   }));
 }
@@ -103,7 +103,7 @@ function addUnit() {
   refreshUnitServices(card);
   card.querySelector('.remove').addEventListener('click', () => {
     card.remove();
-    if (!workUnits.querySelector('.unit-card')) workUnits.innerHTML = '<div class="empty-state">아직 작업이 없습니다. 회의에서 합의한 첫 작업을 추가하세요.</div>';
+    if (!workUnits.querySelector('.unit-card')) workUnits.innerHTML = '<div class="empty-state">아직 추가한 작업이 없습니다. 회의에서 합의한 첫 작업을 추가해 주세요.</div>';
     state.revision = null;
   });
   workUnits.querySelector('.empty-state')?.remove();
@@ -214,7 +214,7 @@ async function preview() {
     state.revision = result.revision;
     const summary = document.querySelector('#validation-summary');
     summary.className = 'validation-summary success';
-    summary.textContent = `검증 통과 · strict 검사 exit ${result.validation.exitCode}. 사람의 계획 승인은 아직 필요합니다.`;
+    summary.textContent = `검사 통과 · strict 검사 종료 코드 ${result.validation.exitCode}. 계획 승인은 별도로 받아야 합니다.`;
     renderFiles(result.files);
     document.querySelector('#save').disabled = false;
   } catch (error) {
@@ -232,7 +232,7 @@ async function save() {
       body: JSON.stringify({ draft: collectDraft(), revision: state.revision }),
     });
     document.querySelector('#save').disabled = true;
-    showMessage(`Change를 저장했습니다. ${result.files.length}개 파일이 생성되었으며, 다음 단계는 사람의 Planning PR 검토입니다.`, 'success');
+    showMessage(`계획을 저장했습니다. 파일 ${result.files.length}개를 만들었습니다. 다음 단계는 계획 PR 검토입니다.`, 'success');
     await loadStatus();
   } catch (error) {
     state.revision = null;
@@ -260,7 +260,7 @@ function packetForm(unit, change, planSha) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'primary';
-  button.textContent = '작업 패킷 생성';
+  button.textContent = '작업 패킷 만들기';
   button.disabled = !unit.eligible;
   button.addEventListener('click', async () => {
     try {
@@ -293,7 +293,7 @@ async function checkDispatch() {
   try {
     const result = await request(`/api/dispatch?change=${encodeURIComponent(change)}&planSha=${encodeURIComponent(planSha)}`);
     resultNode.replaceChildren(...result.units.map((unit) => packetForm(unit, change, planSha)));
-    if (!result.units.length) resultNode.textContent = '발급 가능한 작업이 없습니다.';
+    if (!result.units.length) resultNode.textContent = '시작할 수 있는 작업이 없습니다.';
   } catch (error) {
     resultNode.textContent = error.message;
   }

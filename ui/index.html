@@ -3,24 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>변경 계획 만들기</title>
+  <title>협업 계획 세우기</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="#" aria-label="변경 계획 만들기 홈">
+    <a class="brand" href="#" aria-label="협업 계획 세우기 홈">
       <span class="brand-mark" aria-hidden="true">C</span>
-      <span>변경 계획 만들기</span>
+      <span>협업 계획 세우기</span>
     </a>
     <div id="repo-status" class="repo-status" aria-live="polite">저장소 정보 확인 중…</div>
     <button class="quiet" id="dispatch-open" type="button">승인된 계획으로 작업 시작</button>
   </header>
 
   <main class="shell">
-    <aside class="rail" aria-label="변경 계획 작성 단계">
+    <aside class="rail" aria-label="협업 계획 작성 단계">
       <p class="eyebrow">새 계획 작성</p>
-      <h1>변경 계획 만들기</h1>
-      <p class="rail-copy">회의에서 합의한 내용을 작업자가 바로 실행할 수 있는 계획으로 정리합니다.</p>
+      <h1>협업 계획 세우기</h1>
+      <p class="rail-copy">회의에서 합의한 내용을 각 담당자가 바로 실행할 수 있는 계획으로 정리합니다.</p>
       <ol id="steps" class="steps">
         <li><button type="button" data-step-target="0" aria-current="step"><span>1</span>목표 정하기</button></li>
         <li><button type="button" data-step-target="1"><span>2</span>범위와 완료 기준</button></li>
@@ -33,7 +33,7 @@
         <span>작업 하나마다 담당자 한 명과 별도 작업 공간을 사용합니다.</span>
       </div>
       <div class="existing-changes">
-        <strong>기존 변경 계획</strong>
+        <strong>기존 계획</strong>
         <div id="change-list" class="change-list"><span>불러오는 중…</span></div>
       </div>
     </aside>
@@ -45,13 +45,13 @@
         <section class="step-panel" data-step="0">
           <div class="section-heading">
             <p class="eyebrow">1 · 목표 정하기</p>
-            <h2 tabindex="-1">이번 변경으로 무엇을 개선하려고 하나요?</h2>
+            <h2 tabindex="-1">이번 작업으로 무엇을 개선하려고 하나요?</h2>
             <p>구현 방법보다 사용자가 어떤 변화를 느끼게 될지 먼저 적어 주세요.</p>
           </div>
           <div class="field-grid two">
-            <label>변경 계획 ID
+            <label>계획 ID
               <input name="changeId" autocomplete="off" placeholder="CHG-AUTH-001" required>
-              <small>변경 계획을 구분하는 고유 번호입니다.</small>
+              <small>계획을 구분하는 고유 번호입니다.</small>
             </label>
             <label>진행자
               <input name="coordinator" autocomplete="name" placeholder="jpyoon" required>
@@ -150,7 +150,7 @@
             <div id="file-tabs" class="file-tabs" aria-label="생성할 파일 목록"></div>
             <p class="help">저장하면 다음 파일이 새로 만들어집니다.</p>
             <pre id="file-preview" tabindex="0" aria-label="생성 예정 변경 내용"></pre>
-            <div class="actions"><button class="secondary" type="button" data-back="3">이전</button><button class="primary" id="save" type="button" disabled>새 변경 계획 저장</button></div>
+            <div class="actions"><button class="secondary" type="button" data-back="3">이전</button><button class="primary" id="save" type="button" disabled>새 계획 저장</button></div>
           </div>
         </section>
       </form>
@@ -164,7 +164,7 @@
         <button class="quiet icon-button" value="cancel" aria-label="닫기">×</button>
       </div>
       <p>병합된 계획의 커밋 SHA를 확인한 후에만 작업 패킷을 만들 수 있습니다.</p>
-      <label>변경 ID<input name="dispatchChange" placeholder="CHG-AUTH-001"></label>
+      <label>계획 ID<input name="dispatchChange" placeholder="CHG-AUTH-001"></label>
       <label>계획 커밋 SHA<input name="planSha" placeholder="40자리 병합 커밋 SHA"></label>
       <button class="primary" id="check-dispatch" type="button">시작할 수 있는 작업 확인</button>
       <div id="dispatch-result" class="dispatch-result" aria-live="polite"></div>
