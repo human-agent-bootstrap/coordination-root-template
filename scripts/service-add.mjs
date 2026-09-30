@@ -8,13 +8,26 @@ try {
   required(options, 'id', 'repo');
   const id = safeIdentifier('service id', options.id);
   const url = options.repo;
-  if (!/^(https:\/\/|git@|ssh:\/\/|file:\/\/)/.test(url)) {
-    throw new Error(`invalid --repo: expected an https, ssh, or file git URL, got ${url}`);
+  const registry = readRegistry();
+  const githubHost = registry.github.host;
+  if (!url.startsWith('file://')) {
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`invalid --repo URL: ${url}`);
+    }
+    if (parsed.protocol !== 'https:' || (githubHost && parsed.hostname !== githubHost)) {
+      throw new Error(`service repositories must use HTTPS on ${githubHost || 'the configured GitHub host'}`);
+    }
+    if (parsed.pathname.split('/').filter(Boolean).length !== 2) {
+      throw new Error(`invalid GitHub repository URL: ${url}`);
+    }
   }
   const path = options.path ?? `services/${id}`;
   if (!path.startsWith('services/')) throw new Error(`invalid --path: must live under services/, got ${path}`);
 
-  const existing = readRegistry().services;
+  const existing = registry.services;
   if (existing.some((service) => service.id === id)) throw new Error(`service ${id} is already registered`);
   if (existing.some((service) => service.path === path)) throw new Error(`path ${path} is already registered`);
   if (existsSync(join(process.cwd(), path))) throw new Error(`${path} already exists on disk`);
@@ -22,6 +35,8 @@ try {
   const stack = options.stack ?? 'unspecified';
   const owners = (options.owners ?? '').split(',').map((owner) => owner.trim()).filter(Boolean);
   const verify = (options.verify ?? '').split(',').map((command) => command.trim()).filter(Boolean);
+  if (!url.startsWith('file://') && owners.length === 0) throw new Error('--owners is required for a private service');
+  if (!url.startsWith('file://') && verify.length === 0) throw new Error('--verify is required for a private service');
 
   const entry = [
     '',

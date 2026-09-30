@@ -16,33 +16,47 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  pull-request:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npm run verify:registry -- --strict --allow-uninitialized
+      - run: git checkout -B "${{ github.head_ref }}"
+      - run: node scripts/ci-workflow-check.mjs --branch "${{ github.head_ref }}"
+
+  main:
+    if: github.event_name == 'push'
+    # Only trusted main code receives private-repository credentials or runs inside
+    # the corporate network.
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
+          token: ${{ secrets.COORDINATION_GITHUB_TOKEN || github.token }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 26
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm test
-      # Registry and change manifests must agree before anything else is trusted.
-      - run: npm run verify:registry
-      # Work-unit scope applies to the branch under review, not the merged snapshot.
-      - if: github.event_name == 'pull_request'
-        run: git checkout -B "${{ github.head_ref }}"
-      - if: github.event_name == 'pull_request'
-        run: node scripts/ci-workflow-check.mjs --branch "${{ github.head_ref }}"
-      # Verify whichever candidate matches the checked-in submodule snapshot.
-      - run: npm run verify:candidate -- --detect
-      # Opt-in: only runs when this project has root-level cross-repo E2E tests.
-      - id: e2e
-        run: echo "present=${{ hashFiles('e2e/*.test.mjs') != '' }}" >> "$GITHUB_OUTPUT"
-      - if: steps.e2e.outputs.present == 'true'
-        run: npm run test:e2e
+      - run: npm run verify:registry -- --strict
+      - env:
+          COORDINATION_GITHUB_TOKEN: ${{ secrets.COORDINATION_GITHUB_TOKEN }}
+        run: npm run verify:candidate:ci -- --event push --before "${{ github.event.before }}" --after "${{ github.sha }}"
       # The example's own suite runs only while the example is still installed.
       - id: example
         run: echo "present=${{ hashFiles('examples/todo/tests/*.test.mjs') != '' }}" >> "$GITHUB_OUTPUT"

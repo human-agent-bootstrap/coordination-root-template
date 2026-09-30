@@ -14,7 +14,7 @@ any project, with the TODO case preserved as an installable worked example.
 ## Non-goals
 
 - Epic-level grouping (`epics/`, roll-up status)
-- `scripts/reconcile-prs.mjs` — reconciling `PRS.yaml` against GitHub stays manual
+- Automated GitHub PR reconciliation was out of scope for this historical change.
 - Acceptance-criteria IDs and `verify-acceptance.mjs`
 - `npm run contract:lint`
 - Remote-reachability enforcement in `verify-candidate.mjs`

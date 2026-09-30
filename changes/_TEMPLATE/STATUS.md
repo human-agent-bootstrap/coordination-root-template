@@ -11,26 +11,24 @@
 | Work unit | Repository | State | Gate |
 |---|---|---|---|
 | `contract-and-plan` | Root | draft | Human plan and contract approval |
-| `<back-work-unit>` | Back | not started | Approved plan merge SHA |
-| `<front-work-unit>` | Front | not started | Approved plan merge SHA |
-| `independent-review` | Read-only | not started | Both implementation PRs available |
-| `candidate-integration` | Root | not started | Implementation PRs reviewed and human-merged |
+| `<service-id>-implementation` | `<service-id>` | draft | Approved plan merge SHA |
+| `candidate-integration` | Root | draft | Service PRs reviewed and human-merged |
 
 ## Evidence boundary
 
 - Root base SHA: `<ROOT_BASE_SHA>`
-- Front base SHA: `<FRONT_BASE_SHA>`
-- Back base SHA: `<BACK_BASE_SHA>`
+- Service base SHAs: see `WORK_UNITS.yaml`
 - No implementation has started.
 - No implementation agent has been dispatched.
 - No candidate, release, or deployment claim exists yet.
 
-Regenerate the PR and SHA rows from GitHub rather than editing them by hand:
+Verify recorded PR and SHA rows against GitHub:
 
 ```bash
-node scripts/reconcile-prs.mjs --change <CHANGE-ID>
+npm run verify:prs -- --change <CHANGE-ID>
 ```
 
 ## Next gate
 
-A human reviews and approves the Root planning PR. Its merge SHA becomes the immutable plan version supplied to the parallel Front and Back agents.
+A human reviews and approves the Root planning PR. Its merge SHA becomes the immutable
+plan version supplied to the participating service Writers.

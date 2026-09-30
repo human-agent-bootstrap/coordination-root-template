@@ -8,8 +8,8 @@ work_units:
     base_sha: bffcec94b30b87b7d3348cc33d8745a9a9fdac50
     write_paths:
       - README.md
-      - QUICKSTART.md
-      - WORKFLOW.md
+      - RUNBOOK.md
+      - AGENTS.md
       - package.json
       - package-lock.json
       - scripts/**

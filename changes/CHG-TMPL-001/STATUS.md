@@ -1,6 +1,6 @@
 # Status — CHG-TMPL-001
 
-**State:** IN_PROGRESS
+**State:** COMPLETE
 
 ## Scope
 
@@ -12,12 +12,13 @@ is reinstallable via `init --with-example`.
 
 | Work unit | Repository | State | Gate |
 |---|---|---|---|
-| `template-extraction` | Root | in progress | Human review of the restructuring |
+| `template-extraction` | Root | merged | Root PR #9 |
 
 ## Evidence
 
 - Plan base SHA: `62bf5ea32b0f3ab6427bfbf099f3d6bafd37701e`
-- Framework tests: 25 passing
+- Root merge SHA: `b62bc0516e72f972d3c42490933ff426e8c1b146`
+- Framework tests: 25 passing at the historical merge
 - Example suite: 4 passing
 - Empty-project state: `verify:registry` and `verify:candidate --detect` both pass with
   zero services and zero candidates
@@ -26,12 +27,12 @@ is reinstallable via `init --with-example`.
   `write_paths` pair fails under `--strict`
 - TODO candidate via `init --with-example`: verifies at `front@c33b5990`, `back@4530e5d5`
 
-## Not done in this change
+## Deferred at this historical point
 
-Epic layer, `reconcile-prs.mjs`, acceptance-criteria IDs, `contract:lint`, and
-remote-reachability enforcement. Each needs its own change.
+Epic layer and `contract:lint` remained intentionally out of scope. PR/API verification,
+acceptance-criteria evidence, and remote-reachability checks were added later.
 
 ## Next gate
 
-A human reviews the restructuring. No candidate is produced: this change ships no service
-code and pins no submodule.
+No further gate. This Root-only change shipped through PR #9 and produced no service
+Candidate.

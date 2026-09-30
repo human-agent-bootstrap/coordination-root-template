@@ -1,8 +1,10 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fail, parseArgs, readChangeManifest, readRegistry, REPO_SENTINELS } from './lib.mjs';
+import { fail, isFullSha, isPlanningUnit, parseArgs, readChangeManifest, readRegistry, REPO_SENTINELS } from './lib.mjs';
 
 const TERMINAL_UNIT_STATES = new Set(['merged', 'complete', 'completed', 'aborted', 'abandoned']);
+const UNIT_STATES = new Set(['draft', 'ready', 'in_progress', 'merged', 'blocked', 'aborted']);
+const CHANGE_STATES = new Set(['draft', 'approved', 'active', 'candidate', 'aborted']);
 
 function gitmodules() {
   const path = join(process.cwd(), '.gitmodules');
@@ -34,6 +36,7 @@ function normalize(pattern) {
 }
 
 function overlaps(a, b) {
+  if (String(a) === '**' || String(b) === '**') return true;
   const left = normalize(a);
   const right = normalize(b);
   if (left === right) return true;
@@ -69,6 +72,16 @@ try {
   const registry = readRegistry();
   const byId = new Map(registry.services.map((service) => [service.id, service]));
   if (byId.size !== registry.services.length) problems.push('registry has duplicate service ids');
+  if (registry.version >= 2) {
+    for (const service of registry.services) {
+      if (!Array.isArray(service.owners) || service.owners.length === 0) {
+        problems.push(`service ${service.id}: owners must contain at least one GitHub user or team`);
+      }
+      if (!Array.isArray(service.verify) || service.verify.length === 0) {
+        problems.push(`service ${service.id}: verify must contain at least one command`);
+      }
+    }
+  }
 
   const submodules = gitmodules();
   const byPath = new Map(submodules.map((entry) => [entry.path, entry]));
@@ -80,9 +93,11 @@ try {
     } else if (service.repo && submodule.url && service.repo !== submodule.url) {
       problems.push(`service ${service.id}: registry url ${service.repo} != .gitmodules url ${submodule.url}`);
     }
-    const directory = join(process.cwd(), service.path);
-    if (!existsSync(directory)) problems.push(`service ${service.id}: ${service.path} does not exist`);
-    else if (!existsSync(join(directory, '.git'))) problems.push(`service ${service.id}: ${service.path} is not an initialized submodule`);
+    if (!options['allow-uninitialized']) {
+      const directory = join(process.cwd(), service.path);
+      if (!existsSync(directory)) problems.push(`service ${service.id}: ${service.path} does not exist`);
+      else if (!existsSync(join(directory, '.git'))) problems.push(`service ${service.id}: ${service.path} is not an initialized submodule`);
+    }
   }
 
   for (const submodule of submodules) {
@@ -91,8 +106,11 @@ try {
     }
   }
 
-  const targets = options.change ? [options.change] : changeIds();
-  for (const change of targets) {
+  const allChanges = changeIds();
+  const targets = options.change ? [options.change] : allChanges;
+  if (options.change && !allChanges.includes(options.change)) problems.push(`unknown change: ${options.change}`);
+  const manifests = [];
+  for (const change of allChanges) {
     let manifest;
     try {
       manifest = readChangeManifest(change);
@@ -101,26 +119,95 @@ try {
       continue;
     }
     const units = manifest.work_units;
+    manifests.push({ change, manifest, units });
+    if (!targets.includes(change)) continue;
+
+    const strictManifest = registry.version >= 2 || manifest.schema_version >= 1;
+    if (strictManifest && manifest.schema_version !== 1) {
+      problems.push(`${change}: WORK_UNITS.yaml schema_version must be 1`);
+    }
+    if (strictManifest && !CHANGE_STATES.has(String(manifest.state ?? ''))) {
+      problems.push(`${change}: invalid state "${manifest.state ?? ''}"`);
+    }
+    const unitIds = new Set();
+    const branches = new Set();
 
     for (const unit of units) {
+      if (!unit.id) problems.push(`${change}: work unit missing id`);
+      else if (unitIds.has(unit.id)) problems.push(`${change}: duplicate work unit id ${unit.id}`);
+      else unitIds.add(unit.id);
       const repo = String(unit.repo ?? '');
       if (!repo) problems.push(`${change}/${unit.id}: missing repo`);
       else if (!REPO_SENTINELS.has(repo) && !byId.has(repo)) {
         problems.push(`${change}/${unit.id}: repo "${repo}" is not a registry id or ${[...REPO_SENTINELS].join('/')}`);
       }
+      if (unit.branch && unit.branch !== 'none') {
+        if (branches.has(unit.branch)) problems.push(`${change}: duplicate branch ${unit.branch}`);
+        branches.add(unit.branch);
+      }
+      if (strictManifest) {
+        const state = String(unit.state ?? '');
+        if (!UNIT_STATES.has(state)) problems.push(`${change}/${unit.id}: invalid state "${state}"`);
+        for (const dependency of unit.depends_on) {
+          const dependencyUnit = units.find((candidate) => candidate.id === dependency);
+          if (!dependencyUnit) {
+            problems.push(`${change}/${unit.id}: unknown dependency ${dependency}`);
+          } else if (['ready', 'in_progress'].includes(state) && dependencyUnit.state !== 'merged'
+            && !isPlanningUnit(change, dependencyUnit)) {
+            problems.push(`${change}/${unit.id}: dependency ${dependency} must be merged before ${state}`);
+          }
+        }
+        if (state !== 'draft') {
+          if (!unit.writer || unit.writer === 'unassigned') problems.push(`${change}/${unit.id}: writer must be assigned before ${state}`);
+          if (!isFullSha(unit.base_sha)) problems.push(`${change}/${unit.id}: base_sha must be a full commit SHA before ${state}`);
+          if (unit.repo !== 'cross-repository' && unit.write_paths.length === 0) {
+            problems.push(`${change}/${unit.id}: write_paths must not be empty before ${state}`);
+          }
+          const serviceVerify = byId.get(repo)?.verify ?? [];
+          if (unit.repo !== 'cross-repository' && unit.verify.length === 0 && serviceVerify.length === 0) {
+            problems.push(`${change}/${unit.id}: no verification commands declared`);
+          }
+        }
+      }
     }
 
-    const active = units.filter((unit) => !TERMINAL_UNIT_STATES.has(String(unit.state ?? '').toLowerCase()));
-    const isOrdered = orderedPairs(units);
-    for (let i = 0; i < active.length; i += 1) {
-      for (let j = i + 1; j < active.length; j += 1) {
-        const [a, b] = [active[i], active[j]];
-        if (String(a.repo) !== String(b.repo)) continue;
-        if (isOrdered(a, b)) continue;
-        const shared = a.write_paths.filter((path) => b.write_paths.some((other) => overlaps(path, other)));
-        if (shared.length) {
-          warnings.push(`${change}: concurrent units ${a.id} and ${b.id} both write ${shared.join(', ')} in repo ${a.repo}`);
+    if (strictManifest) {
+      const visiting = new Set();
+      const visited = new Set();
+      const visit = (id) => {
+        if (visiting.has(id)) {
+          problems.push(`${change}: dependency cycle includes ${id}`);
+          return;
         }
+        if (visited.has(id)) return;
+        visiting.add(id);
+        const unit = units.find((candidate) => candidate.id === id);
+        for (const dependency of unit?.depends_on ?? []) visit(dependency);
+        visiting.delete(id);
+        visited.add(id);
+      };
+      for (const unit of units) visit(unit.id);
+    }
+  }
+
+  const active = manifests.flatMap(({ change, units }) => {
+    const ordered = orderedPairs(units);
+    return units
+      .filter((unit) => !TERMINAL_UNIT_STATES.has(String(unit.state ?? '').toLowerCase()))
+      .map((unit) => ({ change, unit, ordered }));
+  });
+  for (let i = 0; i < active.length; i += 1) {
+    for (let j = i + 1; j < active.length; j += 1) {
+      const a = active[i];
+      const b = active[j];
+      if (String(a.unit.repo) !== String(b.unit.repo)) continue;
+      if (a.change !== b.change && REPO_SENTINELS.has(String(a.unit.repo))) continue;
+      if (a.change === b.change && a.ordered(a.unit, b.unit)) continue;
+      const shared = a.unit.write_paths.filter((path) => b.unit.write_paths.some((other) => overlaps(path, other)));
+      if (shared.length) {
+        const left = a.change === b.change ? a.unit.id : `${a.change}/${a.unit.id}`;
+        const right = a.change === b.change ? b.unit.id : `${b.change}/${b.unit.id}`;
+        warnings.push(`concurrent units ${left} and ${right} both write ${shared.join(', ')} in repo ${a.unit.repo}`);
       }
     }
   }

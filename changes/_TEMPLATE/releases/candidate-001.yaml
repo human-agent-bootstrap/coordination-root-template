@@ -1,22 +1,18 @@
+schema_version: 1
 change_id: <CHANGE-ID>
 candidate: 1
-state: not-created
+state: draft
 plan_sha: pending-planning-merge
 services:
-  - repo: front
-    path: services/front
+  - repo: <service-id>
+    path: services/<service-id>
+    base_sha: <SERVICE_BASE_SHA>
     sha: pending-human-approved-merge
-    source_pr: null
-  - repo: back
-    path: services/back
-    sha: pending-human-approved-merge
-    source_pr: null
-verification:
-  root_tests: not-run
-  candidate_sha_check: not-run
-  back_checks: not-run
-  front_checks: not-run
-  browser_e2e: not-run
-approval:
-  independent_review: pending
-  human_candidate_approval: pending
+    source_prs:
+      - <service-id>-implementation
+evidence:
+  - criterion: AC-001
+    kind: command
+    command: <exact command>
+    target_sha: <SERVICE_MERGE_SHA>
+    exit_code: 0

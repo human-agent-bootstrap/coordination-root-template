@@ -3,8 +3,13 @@ import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } 
 import { join } from 'node:path';
 import { fail, parseArgs, readYaml, required } from './lib.mjs';
 
-const PLACEHOLDER_FILES = ['README.md', 'QUICKSTART.md', 'package.json'];
-const EXAMPLE_REF_FILES = ['README.md', 'AGENTS.md', 'QUICKSTART.md', 'USAGE.md'];
+const PLACEHOLDER_FILES = [
+  'README.md',
+  'package.json',
+  '.github/CODEOWNERS',
+  'services/registry.yaml',
+];
+const EXAMPLE_REF_FILES = ['README.md', 'AGENTS.md'];
 const EXAMPLE_BLOCK = /[^\n]*<!-- example:start -->\n[\s\S]*?<!-- example:end -->[^\n]*\n?/g;
 const EXAMPLE_DIR = 'examples/todo';
 
@@ -37,19 +42,33 @@ function installExample(apply) {
 
 try {
   const options = parseArgs(process.argv.slice(2));
-  required(options, 'name', 'org');
+  required(options, 'name', 'org', 'coordinator-owner');
   const name = options.name;
   const org = options.org;
+  const coordinatorOwner = options['coordinator-owner'];
+  const githubHost = options['github-host'] ?? 'github.com';
+  const githubApiBase = options['github-api-base']
+    ?? (githubHost === 'github.com' ? 'https://api.github.com' : `https://${githubHost}/api/v3`);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name)) throw new Error(`invalid --name: ${name}`);
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(org)) throw new Error(`invalid --org: ${org}`);
+  if (!/^@[A-Za-z0-9-]+(?:\/[A-Za-z0-9_.-]+)?$/.test(coordinatorOwner)) {
+    throw new Error(`invalid --coordinator-owner: ${coordinatorOwner}`);
+  }
+  if (!/^[A-Za-z0-9.-]+$/.test(githubHost)) throw new Error(`invalid --github-host: ${githubHost}`);
+  try {
+    new URL(githubApiBase);
+  } catch {
+    throw new Error(`invalid --github-api-base: ${githubApiBase}`);
+  }
 
   const targets = substitutionTargets();
-  const pending = targets.filter((file) => /<PROJECT-NAME>|<ORG>/.test(readFileSync(join(process.cwd(), file), 'utf8')));
+  const pending = targets.filter((file) => /<PROJECT-NAME>|<ORG>|<COORDINATOR-OWNER>|<GITHUB-HOST>|<GITHUB-API-BASE>/.test(readFileSync(join(process.cwd(), file), 'utf8')));
   if (pending.length === 0) {
     throw new Error('this repository is already initialized: no <PROJECT-NAME> or <ORG> placeholder remains');
   }
 
-  process.stdout.write(`<PROJECT-NAME> -> ${name}\n<ORG> -> ${org}\n`);
+  process.stdout.write(`<PROJECT-NAME> -> ${name}\n<ORG> -> ${org}\n<COORDINATOR-OWNER> -> ${coordinatorOwner}\n`);
+  process.stdout.write(`<GITHUB-HOST> -> ${githubHost}\n<GITHUB-API-BASE> -> ${githubApiBase}\n`);
   process.stdout.write(`Files to rewrite: ${pending.join(', ')}\n`);
 
   if (options['with-example']) installExample(Boolean(options.apply));
@@ -60,7 +79,12 @@ try {
   } else {
     for (const file of pending) {
       const path = join(process.cwd(), file);
-      writeFileSync(path, readFileSync(path, 'utf8').split('<PROJECT-NAME>').join(name).split('<ORG>').join(org));
+      writeFileSync(path, readFileSync(path, 'utf8')
+        .split('<PROJECT-NAME>').join(name)
+        .split('<ORG>').join(org)
+        .split('<COORDINATOR-OWNER>').join(coordinatorOwner)
+        .split('<GITHUB-HOST>').join(githubHost)
+        .split('<GITHUB-API-BASE>').join(githubApiBase));
     }
     if (!options['with-example']) {
       rmSync(join(process.cwd(), 'examples'), { recursive: true, force: true });
@@ -71,7 +95,7 @@ try {
           if (entry !== '_TEMPLATE') rmSync(join(changesDir, entry), { recursive: true, force: true });
         }
       }
-      // Leave no reference to a path that no longer exists (AGENTS.md section 16).
+      // Leave no reference to example content that init removes.
       for (const file of EXAMPLE_REF_FILES) {
         const path = join(process.cwd(), file);
         if (!existsSync(path)) continue;

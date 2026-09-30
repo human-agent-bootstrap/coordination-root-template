@@ -4,8 +4,9 @@
 
 - Status: DRAFT
 - Coordinator: <name>
-- Required approvers: <product-owner>, <front-owner>, <back-owner>
+- Required approvers: <product-owner>, <service-owner>, <independent-reviewer>
 - Plan base: <ROOT_BASE_SHA>
+- Tracking: <issue-or-project-url | none>
 
 ## Goal
 
@@ -25,18 +26,15 @@
 
 State results a test can observe. "The screen works" is not a criterion.
 
-- <input rule, including boundary values>
-- <success response shape and status code>
-- <error response shape and status code>
-- Front unit/component tests pass.
-- Back unit/API tests pass.
-- Front + Back end-to-end passes against the candidate SHA combination.
+- [AC-001] <observable success result>
+- [AC-002] <observable boundary or error result>
+- [AC-003] All participating service checks pass at the recorded merge SHAs.
+- [AC-004] Cross-repository verification passes against the exact candidate SHA combination.
 
 ## Contracts
 
-- API: `contracts/<name>.openapi.yaml`
-- Events: <none | schema>
-- Database: <none | migration plan>
+- Shared snapshots: `contracts/<file>` or none
+- Compatibility/migration: <none | plan>
 
 ## Order
 

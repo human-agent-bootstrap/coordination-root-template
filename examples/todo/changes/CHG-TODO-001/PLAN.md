@@ -30,7 +30,7 @@ The compatibility path is additive provider implementation, consumer implementat
 ## Acceptance criteria
 
 - A recursive clone exposes both child repositories at the candidate SHAs.
-- A user can read `WORKFLOW.md`, inspect the work units and OpenAPI snapshot, create a dry-run task packet, and run local tests without Docker.
+- A user can read `RUNBOOK.md` and `AGENTS.md`, inspect the work units and OpenAPI snapshot, create a dry-run task packet, and run local tests without Docker.
 - Validation rejects a wrong branch and candidate SHA mismatch.
 
 ## Risks and stop conditions

@@ -1,5 +1,8 @@
 # 튜토리얼: 실제 서브모듈로 전체 흐름 따라 해보기
 
+> 이 문서는 선택형 실습이며 운영 규칙의 기준은 [`../RUNBOOK.md`](../RUNBOOK.md)와
+> [`../AGENTS.md`](../AGENTS.md)입니다. 이해를 돕기 위해 worktree를 사용하지만 필수는 아닙니다.
+
 이 문서는 명령어를 직접 입력하면서 처음부터 끝까지 따라가는 실습입니다. GitHub에 있는 두 개의
 서비스 저장소를 서브모듈로 연결하고, 하나의 Change를 계획해 병렬로 구현합니다. 이후 PR을 병합하고
 정확한 SHA로 Candidate를 검증하는 과정까지 한 번에 진행합니다.
@@ -11,8 +14,12 @@
 |---|---|
 | Node.js 22 이상 | `node --version` |
 | Git(서브모듈 지원) | `git --version` |
-| GitHub CLI 인증 | `gh auth status` |
+| 사내 Wi-Fi에서 GitHub CLI 인증 | `gh auth status --hostname github.com` |
 | **서비스 저장소 두 개** | 아래 0단계에서 직접 생성 |
+
+이 튜토리얼도 실제 운영처럼 두 구간으로 나눕니다. 저장소 생성·clone·fetch·push·PR·merge는
+사내 Wi-Fi에서 사람이 실행합니다. 외부망의 Agent는 준비된 로컬 clone에서 구현·검증·commit
+까지만 수행하고, PAT를 받거나 GitHub에 접속하지 않습니다.
 
 > SHA 값은 실행할 때마다 달라집니다. 예시의 값 자체가 아니라 출력 형태와 성공·실패 여부를
 > 비교하세요. 나머지 문구는 실제 실행 결과와 같습니다.
@@ -24,10 +31,12 @@
 ## 0단계 — 서비스 저장소 두 개 준비
 
 실제 프로젝트라면 팀이 이미 가진 저장소를 씁니다. 실습에서는 두 개를 새로 만듭니다.
-**`<OWNER>`는 본인 계정 또는 조직 이름으로 바꾸세요.**
+**`OWNER`는 접근 가능한 계정 또는 조직 이름으로 바꾸세요.** 현재 팀 조직은
+`DSPACE-OG087301-AAA`입니다.
 
 ```bash
-export OWNER=<your-account-or-org>
+export OWNER=DSPACE-OG087301-AAA
+export COORDINATOR_OWNER='@DSPACE-OG087301-AAA/your-team'
 export TUT=~/tutorial-notes
 mkdir -p "$TUT/worktrees"
 ```
@@ -62,7 +71,8 @@ git config user.name "Your Name"
 npm ci
 git add -A && git commit -qm "chore: coordination baseline"
 
-npm run init -- --name notes-coord --org "$OWNER" --apply
+npm run init -- --name notes-coord --org "$OWNER" \
+  --github-host github.com --coordinator-owner "$COORDINATOR_OWNER" --apply
 ```
 
 ```text
@@ -82,7 +92,7 @@ npm run verify:candidate -- --detect
 ```
 
 ```text
-ℹ pass 27
+ℹ pass <current test count>
 NOTE: no services registered yet. Add one with: npm run service:add -- --id <id> --repo <url> --apply
 Registry PASS: 0 service(s) []; 0 change(s) validated; 0 warning(s).
 NOTE: no release candidate is declared yet; nothing to verify.
@@ -98,11 +108,13 @@ NOTE: no release candidate is declared yet; nothing to verify.
 ```bash
 npm run service:add -- --id notes-api \
   --repo "https://github.com/$OWNER/tutorial-notes-api.git" \
-  --stack node --verify "node --test tests/" --apply
+  --stack node --owners "$COORDINATOR_OWNER" \
+  --verify "node --test tests/" --apply
 
 npm run service:add -- --id notes-cli \
   --repo "https://github.com/$OWNER/tutorial-notes-cli.git" \
-  --stack node --verify "node --test tests/" --apply
+  --stack node --owners "$COORDINATOR_OWNER" \
+  --verify "node --test tests/" --apply
 ```
 
 두 번째 명령을 실행하면 다음과 같이 출력됩니다.
@@ -144,7 +156,8 @@ git commit -qm "chore: register notes-api and notes-cli as submodules"
 사용자에게 보이는 결과 하나를 하나의 Change로 정의합니다.
 
 ```bash
-npm run change:create -- --change CHG-NOTES-001 --apply
+npm run change:create -- --change CHG-NOTES-001 \
+  --services notes-api,notes-cli --apply
 ls changes/CHG-NOTES-001
 ```
 
@@ -153,12 +166,11 @@ APPLIED: wrote 6 file(s) under changes/CHG-NOTES-001
 contracts	PLAN.md		PRS.yaml	releases	STATUS.md	WORK_UNITS.yaml
 ```
 
-스켈레톤에는 `contracts/api.openapi.yaml` 자리표시자가 들어 있습니다. 이번 실습은 HTTP API가 아니라
-JSON 레코드 계약을 사용하므로 이 파일을 삭제하고 새 계약 파일을 추가합니다. 그대로 두면 이후 생성되는
-작업 패킷에 사용하지 않는 계약까지 표시됩니다.
+스켈레톤에는 계약 작성 안내인 `contracts/README.md`가 들어 있습니다. 이번 실습은 JSON 레코드
+계약을 사용하므로 안내 파일을 삭제하고 실제 계약 파일을 추가합니다.
 
 ```bash
-rm changes/CHG-NOTES-001/contracts/api.openapi.yaml
+rm changes/CHG-NOTES-001/contracts/README.md
 cat > changes/CHG-NOTES-001/contracts/note.schema.json <<'EOF'
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -180,6 +192,10 @@ EOF
 1~100자", "done의 초기값은 false"처럼 적습니다. "잘 동작한다"처럼 판단 기준이 모호한 문장은
 수용 기준으로 사용할 수 없습니다.
 
+이 실습에서는 기존 `AC-001`~`AC-004` 항목을 각각 API 생성 테스트, CLI 렌더링 테스트,
+두 서비스의 merge SHA별 테스트, 아래 10단계의 cross-repository smoke command로
+구체화합니다.
+
 ---
 
 ## 3단계 — 작업 단위로 나누기
@@ -198,33 +214,41 @@ printf 'api=%s\ncli=%s\n' "$API_BASE" "$CLI_BASE"
 
 ```bash
 cat > changes/CHG-NOTES-001/WORK_UNITS.yaml <<EOF
+schema_version: 1
 change_id: CHG-NOTES-001
 state: approved
 plan_base_sha: $ROOT_BASE
+plan_merge_sha: pending
 work_units:
   - id: contract
     repo: root
+    state: in_progress
     goal: Approve the note contract.
     branch: change/CHG-NOTES-001/coordination
     base_sha: $ROOT_BASE
+    writer: coordinator
     write_paths: [changes/CHG-NOTES-001/**]
     depends_on: []
     verify: [npm test]
 
   - id: note-create
     repo: notes-api
+    state: ready
     goal: Create a note that satisfies the contract.
     branch: feat/CHG-NOTES-001/note-create
     base_sha: $API_BASE
+    writer: alice
     write_paths: [src/**, tests/**]
     depends_on: [contract]
     verify: []
 
   - id: note-render
     repo: notes-cli
+    state: ready
     goal: Render a note received from the API.
     branch: feat/CHG-NOTES-001/note-render
     base_sha: $CLI_BASE
+    writer: bob
     write_paths: [src/**, tests/**]
     depends_on: [contract]
     verify: []
@@ -276,7 +300,13 @@ npm run verify:registry -- --change CHG-NOTES-001 --strict
 ```bash
 git add changes/CHG-NOTES-001
 git commit -qm "plan(CHG-NOTES-001): define the note contract and work units"
+export PLAN_SHA=$(git rev-parse HEAD)
 ```
+
+실제 팀에서는 위 커밋을 사람이 사내 Wi-Fi에서 planning PR로 push·review·merge하고,
+`PLAN_SHA`에는 그 merge SHA를 사용합니다. 튜토리얼은 로컬 흐름을 재현하기 위해 현재 커밋을
+승인된 snapshot으로 사용합니다. Agent 작업 전에 사람은 이 SHA와 두 서비스 `base_sha`가
+로컬에 존재하는지 확인하고 사내 Wi-Fi를 끊습니다.
 
 ---
 
@@ -286,8 +316,10 @@ git commit -qm "plan(CHG-NOTES-001): define the note contract and work units"
 맡기든 같은 작업 패킷을 사용합니다.
 
 ```bash
-npm run bootstrap -- --change CHG-NOTES-001 --unit note-create --writer alice --run run-api-001 --apply
-npm run bootstrap -- --change CHG-NOTES-001 --unit note-render --writer bob --run run-cli-001 --apply
+npm run bootstrap -- --plan-sha "$PLAN_SHA" \
+  --change CHG-NOTES-001 --unit note-create --writer alice --run run-api-001 --apply
+npm run bootstrap -- --plan-sha "$PLAN_SHA" \
+  --change CHG-NOTES-001 --unit note-render --writer bob --run run-cli-001 --apply
 cat .task-packets/run-api-001.md
 ```
 
@@ -303,7 +335,7 @@ cat .task-packets/run-api-001.md
   - tests/**
 
 # CONTRACT
-- Read AGENTS.md and WORKFLOW.md in the Root repository before implementation.
+- Read AGENTS.md in the Root repository before implementation.
 - Approved contract snapshots (do not modify):
   - changes/CHG-NOTES-001/contracts/note.schema.json
 - Do not modify the Root coordination files or another repository.
@@ -315,24 +347,24 @@ cat .task-packets/run-api-001.md
 계약 경로는 Change에서 자동으로 찾아낸 값이며 하드코딩된 값이 아닙니다. 검증 명령에는
 `(service registry)`라는 출처도 함께 표시됩니다.
 
-작업 패킷을 만들어도 브랜치나 워크트리는 생성되지 않습니다. 작업 공간을 분리하는 과정은
-다음 단계에서 별도로 진행합니다.
+작업 패킷을 만들어도 브랜치나 workspace는 생성되지 않습니다. 기존 checkout, worktree,
+별도 clone 또는 Agent 하네스의 격리 workspace 중 하나를 사용자나 하네스가 선택합니다.
 
 에이전트에게 맡길 때는 다음과 같이 요청합니다. 어떤 도구를 사용하더라도 요청 형식은 같습니다.
 
 ```text
 Read AGENTS.md and the task packet at .task-packets/run-api-001.md.
-Execute work unit note-create for change CHG-NOTES-001 in the assigned worktree.
+Execute work unit note-create for change CHG-NOTES-001 in the assigned workspace.
 Do not modify anything outside the declared write_paths.
 Run every declared verification command and report the actual exit codes.
 ```
 
 ---
 
-## 6단계 — 격리된 워크트리에서 병렬로 구현하기
+## 6단계 — 격리된 workspace에서 병렬로 구현하기
 
-작업자마다 별도의 워크트리를 사용합니다. 워크트리는 조율 저장소가 아니라 각 서브모듈, 즉 서비스
-저장소 안에서 만듭니다.
+이 실습에서는 격리 방법으로 worktree를 선택합니다. 실제 작업에서는 clean한 기존 checkout,
+별도 clone 또는 Agent 하네스가 만든 workspace를 사용해도 됩니다.
 
 ```bash
 git -C services/notes-api worktree add -b feat/CHG-NOTES-001/note-create "$TUT/worktrees/note-create" "$API_BASE"
@@ -423,39 +455,50 @@ EOF
 ```bash
 cd "$TUT/root"
 echo "oops" > "$A/README.md"
-node scripts/workflow-check.mjs --change CHG-NOTES-001 --unit note-create --repo-path "$A"
+node scripts/workflow-check.mjs --plan-sha "$PLAN_SHA" \
+  --change CHG-NOTES-001 --unit note-create --repo-path "$A"
 ```
 
 ```text
 ERROR: scope violation: README.md
 ```
 
-명령은 종료 코드 1로 실패합니다. `README.md`가 `write_paths`에 없기 때문에 푸시 전에
+명령은 종료 코드 1로 실패합니다. `README.md`가 `write_paths`에 없기 때문에 로컬 commit 전에
 범위 위반을 발견한 것입니다. 변경을 되돌립니다.
 
 ```bash
 git -C "$A" checkout -- README.md
-node scripts/workflow-check.mjs --change CHG-NOTES-001 --unit note-create --repo-path "$A"
+node scripts/workflow-check.mjs --plan-sha "$PLAN_SHA" \
+  --change CHG-NOTES-001 --unit note-create --repo-path "$A"
 ```
 
 ```text
 Workflow check PASS: CHG-NOTES-001/note-create; base <API_BASE>; 2 changed file(s).
 ```
 
-> 실제 작업에서는 각 작업자가 자신의 워크트리에서 `npm run workflow:check`를 실행하면 됩니다.
-> 스크립트가 현재 브랜치 이름에서 Change와 작업 단위를 찾아냅니다.
+> 실제 작업에서도 Root clone을 현재 디렉터리로 두고 `scripts/workflow-check.mjs`에
+> `--plan-sha`, `--change`, `--unit`, `--repo-path`를 명시합니다.
 
 ---
 
-## 8단계 — PR을 만들고 squash 방식으로 병합하기
+## 8단계 — 로컬 commit 후 사람이 PR을 만들고 squash merge하기
 
-각 작업자는 자신이 맡은 서비스 저장소에만 푸시합니다.
+외부망의 Agent는 자신이 맡은 서비스 브랜치에 로컬 commit을 만들고 handoff를 작성한 뒤
+멈춥니다.
 
 ```bash
 for d in "$A" "$C"; do
   git -C "$d" add src tests
   git -C "$d" commit -qm "feat(CHG-NOTES-001): implement against the approved note contract"
 done
+export API_HEAD=$(git -C "$A" rev-parse HEAD)
+export CLI_HEAD=$(git -C "$C" rev-parse HEAD)
+```
+
+이제 사람이 사내 Wi-Fi에 연결합니다. handoff의 branch와 head SHA가 위 로컬 상태와
+일치하는지 확인한 뒤 push합니다.
+
+```bash
 git -C "$A" push -qu origin feat/CHG-NOTES-001/note-create
 git -C "$C" push -qu origin feat/CHG-NOTES-001/note-render
 ```
@@ -485,10 +528,7 @@ Scope: src/**, tests/** only"
 실제 팀에서는 구현자가 아닌 사람이 독립적으로 리뷰하고 CI 결과를 확인해야 합니다. 모든 검토가
 끝나면 사람이 병합합니다. 이 실습에서는 본인이 직접 병합합니다.
 
-병합하기 전에 PR의 헤드 SHA를 기록해 두세요. 다음 단계에서 병합 SHA와 비교합니다.
-
 ```bash
-export API_HEAD=$(git -C "$A" rev-parse HEAD)
 gh pr merge --repo "$OWNER/tutorial-notes-api" --squash --delete-branch feat/CHG-NOTES-001/note-create
 gh pr merge --repo "$OWNER/tutorial-notes-cli" --squash --delete-branch feat/CHG-NOTES-001/note-render
 ```
@@ -518,7 +558,8 @@ git submodule status
 
 `+` 접두사는 조율 저장소에 기록된 포인터와 현재 체크아웃된 SHA가 다르다는 뜻입니다. 다음 단계에서 이 변경을 커밋합니다.
 
-해당 SHA가 원격 저장소에서 조회되는지 직접 확인하세요. 이 항목은 현재 스크립트가 자동으로 검사하지 않습니다.
+해당 SHA가 원격 저장소에서 조회되는지 확인하세요. Candidate 검증도 `--target-ref`를 사용하면
+같은 원격 도달성을 검사합니다.
 
 ```bash
 git -C services/notes-api branch -r --contains "$API_MERGE"
@@ -537,29 +578,105 @@ git -C services/notes-cli branch -r --contains "$CLI_MERGE"
 ## 10단계 — Candidate 확정 및 검증
 
 ```bash
+mkdir -p e2e
+cat > e2e/notes.test.mjs <<'EOF'
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createNote } from '../services/notes-api/src/note.mjs';
+import { renderNote } from '../services/notes-cli/src/render.mjs';
+
+test('API output renders in the CLI', () => {
+  assert.equal(renderNote(createNote(' Buy milk ')), '[ ] Buy milk (note-1)');
+});
+EOF
+npm run test:e2e
+
+cat > changes/CHG-NOTES-001/PRS.yaml <<EOF
+schema_version: 1
+change_id: CHG-NOTES-001
+state: merged
+plan_merge_sha: $PLAN_SHA
+prs:
+  - key: root-planning
+    repo: root
+    work_unit: contract
+    state: merged
+    merge_sha: $PLAN_SHA
+  - key: notes-api-implementation
+    repo: notes-api
+    work_unit: note-create
+    number: 1
+    state: merged
+    base_sha: $API_BASE
+    head_sha: $API_HEAD
+    merge_sha: $API_MERGE
+  - key: notes-cli-implementation
+    repo: notes-cli
+    work_unit: note-render
+    number: 1
+    state: merged
+    base_sha: $CLI_BASE
+    head_sha: $CLI_HEAD
+    merge_sha: $CLI_MERGE
+EOF
+
 cat > changes/CHG-NOTES-001/releases/candidate-001.yaml <<EOF
+schema_version: 1
 change_id: CHG-NOTES-001
 candidate: 1
 state: validating
+plan_sha: $PLAN_SHA
 services:
   - repo: notes-api
     path: services/notes-api
+    base_sha: $API_BASE
     sha: $API_MERGE
-    source_pr: 1
+    source_prs: [notes-api-implementation]
   - repo: notes-cli
     path: services/notes-cli
+    base_sha: $CLI_BASE
     sha: $CLI_MERGE
-    source_pr: 1
+    source_prs: [notes-cli-implementation]
+evidence:
+  - criterion: AC-001
+    kind: command
+    command: node --test tests/
+    target_sha: $API_MERGE
+    exit_code: 0
+  - criterion: AC-002
+    kind: command
+    command: node --test tests/
+    target_sha: $CLI_MERGE
+    exit_code: 0
+  - criterion: AC-003
+    kind: command
+    command: node --test tests/
+    target_sha: $API_MERGE
+    exit_code: 0
+  - criterion: AC-003
+    kind: command
+    command: node --test tests/
+    target_sha: $CLI_MERGE
+    exit_code: 0
+  - criterion: AC-004
+    kind: command
+    command: npm run test:e2e
+    target_sha: $API_MERGE
+    exit_code: 0
 EOF
-npm run verify:candidate -- --detect
+npm run verify:candidate -- --change CHG-NOTES-001 --target-ref "$PLAN_SHA"
 ```
 
 ```text
 Candidate CHG-NOTES-001: PASS (2 service(s): notes-api@<12자>, notes-cli@<12자>)
 ```
 
-`--detect`는 체크아웃된 서브모듈 스냅샷과 일치하는 Candidate를 **스스로 찾아** 검증합니다.
-CI에서 Change ID를 하드코딩하지 않아도 되는 이유입니다.
+실제 팀에서는 `COORDINATION_GITHUB_TOKEN`이 설정된 사내 Wi-Fi 환경에서
+`npm run verify:prs -- --change CHG-NOTES-001`도 실행합니다. 이 단독 실습은 작성자가 직접
+merge하므로 독립 승인 검사는 의도적으로 생략합니다.
+운영 Candidate PR은 merge 전에 `verify:registry`, `verify:prs`, `verify:candidate`를
+통과시켜야 합니다. 이 예제처럼 검증 가능한 통합 시나리오가 있으면 `test:e2e`도 실행하며,
+merge 후 `main` CI가 필수 게이트와 존재하는 E2E suite를 다시 확인합니다.
 
 ---
 
@@ -569,7 +686,7 @@ CI에서 Change ID를 하드코딩하지 않아도 되는 이유입니다.
 
 ```bash
 sed -i.bak "s|sha: $API_MERGE|sha: $API_HEAD|" changes/CHG-NOTES-001/releases/candidate-001.yaml
-npm run verify:candidate -- --change CHG-NOTES-001
+npm run verify:candidate -- --change CHG-NOTES-001 --target-ref "$PLAN_SHA"
 ```
 
 ```text
@@ -593,7 +710,7 @@ Candidate가 있는데 현재 서브모듈 상태와 하나도 맞지 않는다�
 
 ```bash
 mv changes/CHG-NOTES-001/releases/candidate-001.yaml.bak changes/CHG-NOTES-001/releases/candidate-001.yaml
-npm run verify:candidate -- --detect
+npm run verify:candidate -- --change CHG-NOTES-001 --target-ref "$PLAN_SHA"
 ```
 
 ---
@@ -632,7 +749,7 @@ npm test
 실제 팀에서는 이 커밋으로 루트 Candidate PR을 만듭니다. 사람이 이 PR을 승인하고 병합해야
 Change가 완료됩니다. 각 서비스 저장소의 PR을 병합한 시점이 Change 완료 시점은 아닙니다.
 
-워크트리를 정리합니다.
+이 실습에서 만든 worktree를 정리합니다.
 
 ```bash
 git -C services/notes-api worktree remove "$A"
@@ -655,7 +772,7 @@ rm -rf "$TUT"
 | 의도된 실패 | 확인한 보호 장치 |
 |---|---|
 | ① 중복 `write_paths` | 두 작업자가 같은 파일을 덮어쓰는 상황을 코드 작성 전에 차단 |
-| ② 범위 밖 수정 | 작업자가 선언된 범위를 벗어난 변경을 푸시 전에 차단 |
+| ② 범위 밖 수정 | 작업자가 선언된 범위를 벗어난 변경을 로컬 commit 전에 차단 |
 | ③ 헤드 SHA를 Candidate에 기록 | 검증하지 않은 조합을 Candidate로 확정하는 실수를 차단 |
 
 계약을 먼저 승인했기 때문에 두 서비스는 서로의 구현을 기다리지 않고 병렬로 작업할 수 있었습니다.
@@ -663,16 +780,18 @@ rm -rf "$TUT"
 
 ## 도구가 자동으로 검사하지 않는 항목
 
-- **원격 도달성:** 9단계에서 직접 확인했습니다. 현재 자동 검사는 제공되지 않습니다.
 - **계획 부합성:** 결과를 `PLAN.md`와 자동으로 비교하는 기능은 없습니다. 수용 기준에 맞는지는
   사람이 직접 확인해야 합니다. SHA 검사는 어떤 코드가 선택됐는지는 보여주지만, 그 코드가 합의한
   방식대로 동작하는지까지 증명하지는 않습니다.
-- **`PRS.yaml`과 `STATUS.md`의 정확성:** 사람이 직접 기록하므로 GitHub의 실제 상태와 달라질 수 있습니다.
+- **사람이 기록한 설명의 의미:** `verify:prs`는 PR/SHA/독립 승인을 대조하지만, `STATUS.md`의
+  설명과 Candidate evidence의 의미가 충분한지는 사람이 검토해야 합니다.
 
 ## 실습과 실제 팀 작업의 차이
 
 - 8단계에서는 본인이 직접 병합했지만, 실제 팀에서는 구현자가 아닌 사람의 독립 리뷰와 CI 통과가
   먼저 이루어져야 합니다. 계획 작성자가 자신의 계획을 혼자 승인해서도 안 됩니다.
+- 실제 Agent는 외부망에서 로컬 commit과 handoff까지만 수행합니다. 사내 Wi-Fi의 사람이
+  동일한 branch와 SHA를 확인한 뒤 push와 GitHub 작업을 이어받습니다.
 - 서비스 저장소 PR은 리뷰를 통과하면 바로 병합합니다. 스프린트가 끝날 때까지 열어두면 병합 SHA가
   생성되지 않아 Candidate를 확정할 수 없습니다.
 - 저장소 간 E2E 검증은 루트 저장소가 Candidate 조합을 대상으로 실행합니다. 작업자는 형제 서비스의
@@ -681,6 +800,6 @@ rm -rf "$TUT"
 
 ## 다음에 읽을 것
 
-- [`../USAGE.md`](../USAGE.md) — 팀이 한 스프린트를 굴리는 전체 순서와 역할 분담
+- [`../RUNBOOK.md`](../RUNBOOK.md) — 팀이 Change를 운영하는 전체 순서와 역할 분담
 - [`../AGENTS.md`](../AGENTS.md) — 에이전트와 작업자가 지켜야 하는 규칙 전문
 - [`todo/`](./todo/) — 실제 PR과 병합 SHA가 남아 있는 완성된 사례

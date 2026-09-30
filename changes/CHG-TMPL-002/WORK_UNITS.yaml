@@ -1,10 +1,12 @@
+schema_version: 1
 change_id: CHG-TMPL-002
 state: approved
 plan_base_sha: b62bc0516e72f972d3c42490933ff426e8c1b146
-plan_merge_sha: pending
+plan_merge_sha: 488a445d6a57d5d1bc1b5c5514937ef018a792aa
 work_units:
   - id: hands-on-tutorial
     repo: root
+    state: merged
     stack: root-coordination
     goal: Add a copy-paste tutorial that runs one full cycle with two local services.
     branch: change/CHG-TMPL-002/hands-on-tutorial

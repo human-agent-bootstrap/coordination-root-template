@@ -82,6 +82,7 @@ test('bootstrap defaults to dry-run and writes no task packet', () => {
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /DRY RUN/);
     assert.match(result.stdout, /feat\/CHG-FIXTURE-001\/sample-ui/);
+    assert.match(result.stdout, /does not create a branch or workspace/);
     assert.throws(() => readFileSync(join(dir, '.task-packets/run-1.md')));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -152,6 +153,40 @@ test('workflow check accepts an explicit branch expected by a follow-up PR', () 
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('CI workflow check resolves a planning unit by its declared branch', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'coord-root-ci-branch-'));
+  try {
+    execFileSync('git', ['init', '-qb', 'main'], { cwd: dir });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: dir });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: dir });
+    mkdirSync(join(dir, 'services'), { recursive: true });
+    writeFileSync(join(dir, 'services/registry.yaml'), 'version: 1\nservices: []\n');
+    writeFileSync(join(dir, 'README.md'), 'baseline\n');
+    execFileSync('git', ['add', '.'], { cwd: dir });
+    execFileSync('git', ['commit', '-qm', 'baseline'], { cwd: dir });
+    const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    execFileSync('git', ['checkout', '-qb', 'change/CHG-CUSTOM-001/coordination'], { cwd: dir });
+    mkdirSync(join(dir, 'changes/CHG-CUSTOM-001'), { recursive: true });
+    writeFileSync(join(dir, 'changes/CHG-CUSTOM-001/WORK_UNITS.yaml'), `change_id: CHG-CUSTOM-001
+work_units:
+  - id: contract
+    repo: root
+    branch: change/CHG-CUSTOM-001/coordination
+    base_sha: ${base}
+    write_paths: [changes/CHG-CUSTOM-001/**]
+    depends_on: []
+    verify: [npm test]
+`);
+    execFileSync('git', ['add', '.'], { cwd: dir });
+    execFileSync('git', ['commit', '-qm', 'planning'], { cwd: dir });
+    const result = run('ci-workflow-check.mjs', [
+      '--branch', 'change/CHG-CUSTOM-001/coordination',
+    ], dir);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /CHG-CUSTOM-001\/contract/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 for (const state of ['untracked', 'unstaged', 'staged']) {
   test(`workflow check rejects an out-of-scope ${state} change`, () => {
     const { dir, worktree } = workflowFixture();
@@ -165,6 +200,47 @@ for (const state of ['untracked', 'unstaged', 'staged']) {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 }
+
+test('workflow check treats ** as full-repository scope', () => {
+  const { dir, worktree } = workflowFixture();
+  try {
+    const manifestPath = join(dir, 'changes/CHG-FIXTURE-001/WORK_UNITS.yaml');
+    writeFileSync(manifestPath, readFileSync(manifestPath, 'utf8')
+      .replace('      - src/**', '      - "**"'));
+    mkdirSync(join(worktree, '.github/workflows'), { recursive: true });
+    writeFileSync(join(worktree, 'README.md'), 'greenfield repository\n');
+    writeFileSync(join(worktree, '.github/workflows/ci.yml'), 'name: ci\n');
+    const result = run('workflow-check.mjs', [
+      '--change', 'CHG-FIXTURE-001',
+      '--unit', 'sample-ui',
+      '--repo-path', worktree,
+    ], dir);
+    assert.equal(result.status, 0, result.stderr);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('workflow check never lets --allow-descendant bypass ancestry', () => {
+  const { dir, worktree } = workflowFixture();
+  try {
+    const tree = execFileSync('git', ['write-tree'], { cwd: worktree, encoding: 'utf8' }).trim();
+    const unrelated = execFileSync('git', ['commit-tree', tree], {
+      cwd: worktree,
+      encoding: 'utf8',
+      input: 'unrelated\n',
+    }).trim();
+    const manifestPath = join(dir, 'changes/CHG-FIXTURE-001/WORK_UNITS.yaml');
+    writeFileSync(manifestPath, readFileSync(manifestPath, 'utf8')
+      .replace(/base_sha: [0-9a-f]{40}/, `base_sha: ${unrelated}`));
+    const result = run('workflow-check.mjs', [
+      '--change', 'CHG-FIXTURE-001',
+      '--unit', 'sample-ui',
+      '--repo-path', worktree,
+      '--allow-descendant',
+    ], dir);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /does not descend from base_sha/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 
 test('candidate verification accepts matching submodule SHAs', () => {
   const dir = fixture();
@@ -292,6 +368,17 @@ test('registry verification flags concurrent work units that share write paths',
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('registry verification treats ** as overlapping every path', () => {
+  const dir = fixture();
+  try {
+    initServices(dir, ['front', 'back']);
+    writeFileSync(join(dir, 'changes/CHG-FIXTURE-001/WORK_UNITS.yaml'), 'change_id: CHG-FIXTURE-001\nwork_units:\n  - id: greenfield\n    repo: front\n    write_paths:\n      - "**"\n    depends_on: []\n  - id: feature\n    repo: front\n    write_paths:\n      - src/api/**\n    depends_on: []\n');
+    const result = run('verify-registry.mjs', ['--strict'], dir);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /greenfield and feature both write/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('registry verification allows shared paths when depends_on orders the units', () => {
   const dir = fixture();
   try {
@@ -348,18 +435,28 @@ test('init removes the template\'s own change records but keeps the skeleton', (
     mkdirSync(join(dir, 'changes/_TEMPLATE'), { recursive: true });
     mkdirSync(join(dir, 'changes/CHG-OWN-001'), { recursive: true });
     mkdirSync(join(dir, 'services'), { recursive: true });
+    mkdirSync(join(dir, '.github'), { recursive: true });
     writeFileSync(join(dir, 'changes/_TEMPLATE/PLAN.md'), '# <CHANGE-ID>\n');
     writeFileSync(join(dir, 'changes/CHG-OWN-001/PLAN.md'), '# CHG-OWN-001\n');
-    writeFileSync(join(dir, 'services/registry.yaml'), 'version: 1\nservices: []\n');
+    writeFileSync(join(dir, 'services/registry.yaml'), 'version: 2\ngithub:\n  host: <GITHUB-HOST>\n  api_base: <GITHUB-API-BASE>\nservices: []\n');
+    writeFileSync(join(dir, '.github/CODEOWNERS'), '/changes/ <COORDINATOR-OWNER>\n');
     writeFileSync(join(dir, '.gitmodules'), '');
-    writeFileSync(join(dir, 'README.md'), '# <PROJECT-NAME>\nclone https://github.com/<ORG>/<PROJECT-NAME>.git\n');
+    writeFileSync(join(dir, 'README.md'), '# <PROJECT-NAME>\nclone https://<GITHUB-HOST>/<ORG>/<PROJECT-NAME>.git\n');
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '<PROJECT-NAME>', scripts: { 'test:example': 'x' } }, null, 2));
 
-    const result = run('init-project.mjs', ['--name', 'acme-coord', '--org', 'acme', '--apply'], dir);
+    const result = run('init-project.mjs', [
+      '--name', 'acme-coord',
+      '--org', 'acme',
+      '--coordinator-owner', '@acme/coordination',
+      '--github-host', 'github.com',
+      '--apply',
+    ], dir);
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(readdirSync(join(dir, 'changes')), ['_TEMPLATE']);
     assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /acme-coord/);
-    assert.doesNotMatch(readFileSync(join(dir, 'README.md'), 'utf8'), /<PROJECT-NAME>|<ORG>/);
+    assert.doesNotMatch(readFileSync(join(dir, 'README.md'), 'utf8'), /<PROJECT-NAME>|<ORG>|<GITHUB-HOST>/);
+    assert.match(readFileSync(join(dir, 'services/registry.yaml'), 'utf8'), /api_base: https:\/\/api\.github\.com/);
+    assert.equal(readFileSync(join(dir, '.github/CODEOWNERS'), 'utf8'), '/changes/ @acme/coordination\n');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

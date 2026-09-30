@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import YAML from 'yaml';
@@ -7,7 +9,15 @@ export function fail(message) {
   process.exitCode = 1;
 }
 
-const BOOLEAN_FLAGS = new Set(['apply', 'allow-descendant', 'strict', 'detect', 'branch-from-git', 'with-example']);
+const BOOLEAN_FLAGS = new Set([
+  'apply',
+  'allow-descendant',
+  'allow-uninitialized',
+  'strict',
+  'detect',
+  'branch-from-git',
+  'with-example',
+]);
 
 export function parseArgs(argv) {
   const options = {};
@@ -41,6 +51,14 @@ export function manifestPath(change) {
   return join(process.cwd(), 'changes', change, 'WORK_UNITS.yaml');
 }
 
+export function isFullSha(value) {
+  return /^[0-9a-f]{40}$/i.test(String(value ?? ''));
+}
+
+export function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
 export function readYaml(path) {
   if (!existsSync(path)) throw new Error(`missing file: ${path}`);
   try {
@@ -50,26 +68,55 @@ export function readYaml(path) {
   }
 }
 
+export function readAtRef(ref, path) {
+  try {
+    return execFileSync('git', ['show', `${ref}:${path}`], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    throw new Error(`missing file at ${ref}: ${path}`);
+  }
+}
+
+export function readYamlAtRef(ref, path) {
+  try {
+    return YAML.parse(readAtRef(ref, path)) ?? {};
+  } catch (error) {
+    if (error.message.startsWith('missing file at ')) throw error;
+    throw new Error(`invalid YAML at ${ref}:${path}: ${error.message}`);
+  }
+}
+
 export function registryPath() {
   return join(process.cwd(), 'services', 'registry.yaml');
 }
 
+// cross-repository remains readable for historical examples; new scaffolds do not emit it.
 export const REPO_SENTINELS = new Set(['root', 'cross-repository']);
 
-export function readRegistry() {
-  const registry = readYaml(registryPath());
+export function readRegistry(ref) {
+  const registry = ref
+    ? readYamlAtRef(ref, 'services/registry.yaml')
+    : readYaml(registryPath());
   const services = registry.services ?? [];
   if (!Array.isArray(services)) throw new Error('registry services must be a list');
   for (const service of services) {
     if (!service?.id || !service?.path) throw new Error('every registry service needs id and path');
   }
-  return { version: registry.version ?? 1, services };
+  return {
+    version: registry.version ?? 1,
+    github: registry.github ?? {},
+    services,
+  };
 }
 
-export function readChangeManifest(change) {
-  const manifest = readYaml(manifestPath(change));
+export function readChangeManifest(change, ref) {
+  const relativePath = `changes/${change}/WORK_UNITS.yaml`;
+  const manifest = ref ? readYamlAtRef(ref, relativePath) : readYaml(manifestPath(change));
   const units = manifest.work_units ?? [];
-  if (!Array.isArray(units)) throw new Error(`work_units must be a list in ${manifestPath(change)}`);
+  if (!Array.isArray(units)) throw new Error(`work_units must be a list in ${relativePath}`);
   for (const unit of units) {
     unit.write_paths ??= [];
     unit.depends_on ??= [];
@@ -78,12 +125,19 @@ export function readChangeManifest(change) {
   return { ...manifest, work_units: units };
 }
 
-export function readWorkUnits(change) {
-  return readChangeManifest(change).work_units;
+export function readWorkUnits(change, ref) {
+  return readChangeManifest(change, ref).work_units;
 }
 
-export function findUnit(change, id) {
-  const unit = readWorkUnits(change).find((item) => item.id === id);
+// The planning unit merges through its own PR, so a manifest written before that
+// merge can never record it as `merged`. Dependents may still become ready; the
+// plan SHA gate (reachable from origin/main) proves the planning merge happened.
+export function isPlanningUnit(changeId, unit) {
+  return String(unit?.repo) === 'root' && unit?.branch === `change/${changeId}/coordination`;
+}
+
+export function findUnit(change, id, ref) {
+  const unit = readWorkUnits(change, ref).find((item) => item.id === id);
   if (!unit) throw new Error(`unknown work unit: ${id}`);
   return unit;
 }

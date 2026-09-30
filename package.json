@@ -15,8 +15,10 @@
     "bootstrap": "node scripts/bootstrap.mjs",
     "workflow:check": "node scripts/ci-workflow-check.mjs --branch-from-git",
     "verify:registry": "node scripts/verify-registry.mjs",
+    "verify:prs": "node scripts/verify-prs.mjs",
     "verify:candidate": "node scripts/verify-candidate.mjs",
-    "test:e2e": "node --test e2e/*.test.mjs"
+    "verify:candidate:ci": "node scripts/ci-candidate-check.mjs",
+    "test:e2e": "node scripts/test-e2e.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"

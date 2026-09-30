@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { findUnit, parseArgs, required } from './lib.mjs';
+import { parseArgs, readWorkUnits, required } from './lib.mjs';
 
 function fail(message) {
   process.stderr.write(`ERROR: ${message}\n`);
@@ -16,25 +16,17 @@ try {
   const match = options.branch.match(/^(?:change|feat|fix|refactor|test|docs|chore)\/([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9_-]+)$/);
   if (!match) throw new Error(`branch does not identify a Change and work unit: ${options.branch}`);
 
-  const [, change, branchUnit] = match;
-  const units = branchUnit === 'coordination'
-    ? ['contract-and-plan', 'coordination']
-    : [branchUnit];
-  const unit = units.find((candidate) => {
-    try {
-      return findUnit(change, candidate).branch === options.branch;
-    } catch {
-      return false;
-    }
-  });
-  if (!unit) throw new Error(`no work unit in ${change} declares branch ${options.branch}`);
+  const [, change] = match;
+  const units = readWorkUnits(change).filter((unit) => unit.branch === options.branch);
+  if (units.length !== 1) {
+    throw new Error(`${units.length || 'no'} work unit in ${change} declares branch ${options.branch}`);
+  }
 
   const result = spawnSync(process.execPath, [
     new URL('./workflow-check.mjs', import.meta.url).pathname,
     '--change', change,
-    '--unit', unit,
+    '--unit', units[0].id,
     '--expected-branch', options.branch,
-    '--allow-descendant',
   ], { cwd: process.cwd(), encoding: 'utf8', stdio: 'inherit' });
 
   if (result.error) throw result.error;
