@@ -7,6 +7,25 @@ This repo owns plans, contracts, ownership, PR evidence, and release candidates.
 Use it when several people (and their agents) change several repos toward one goal and
 you need the result to be verifiable rather than merely merged.
 
+## Local planning UI
+
+After registering service repositories, a coordinator can run the planning meeting without
+editing Markdown or YAML directly:
+
+```bash
+npm ci
+npm run ui
+```
+
+Open `http://127.0.0.1:4173`. The guided meeting creates a new Change preview, runs the
+existing strict registry validation, shows every generated artifact, and writes the complete
+`changes/<CHANGE-ID>/` directory only after explicit confirmation. It never commits, pushes,
+opens or merges a pull request, creates a workspace, or starts an Agent.
+
+After a human reviews and merges the planning PR, open **작업 시작 문서**, enter the planning
+merge SHA, and create the eligible Work Unit packets. The same approval and dependency rules
+as `npm run bootstrap` apply.
+
 ## Start here
 
 ```bash

@@ -9,6 +9,8 @@
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "test:example": "node --test examples/todo/tests/*.test.mjs",
+    "test:ui": "playwright test e2e/orchestration-ui.test.mjs --reporter=line",
+    "ui": "node scripts/orchestration-server.mjs",
     "init": "node scripts/init-project.mjs",
     "service:add": "node scripts/service-add.mjs",
     "change:create": "node scripts/change-create.mjs",
