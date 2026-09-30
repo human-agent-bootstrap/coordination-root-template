@@ -243,6 +243,17 @@ test('validation rejects glob forms that workflow-check cannot enforce', () => {
   assert.ok(result.errors.some(({ code }) => code === 'UNSUPPORTED_SCOPE'));
 });
 
+test('validation caps work units before pairwise analysis can block the server', () => {
+  const result = validateDraft({
+    ...validDraft,
+    workUnits: Array.from({ length: 51 }, (_, index) => ({
+      ...validDraft.workUnits[0], id: `work-${index}`, writePaths: [`src/${index}/**`],
+    })),
+  }, { services: [{ id: 'api', verify: ['npm test'] }] });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(({ code }) => code === 'LIMIT_EXCEEDED'));
+});
+
 test('server reports repository state and registered service bases', async () => {
   const root = serverFixture();
   try {
@@ -296,8 +307,19 @@ test('preview is non-mutating and save requires its current revision', async () 
       });
       assert.equal(staleResponse.status, 409);
 
-      const saveResponse = await fetch(`${origin}/api/changes`, {
+      writeFileSync(join(root, 'services/registry.yaml'), `${readFileSync(join(root, 'services/registry.yaml'), 'utf8')}\n`);
+      const changedInputResponse = await fetch(`${origin}/api/changes`, {
         method: 'POST', headers, body: JSON.stringify({ draft: validDraft, revision: preview.revision }),
+      });
+      assert.equal(changedInputResponse.status, 409);
+
+      const refreshedResponse = await fetch(`${origin}/api/changes/preview`, {
+        method: 'POST', headers, body: JSON.stringify(validDraft),
+      });
+      const refreshed = await refreshedResponse.json();
+
+      const saveResponse = await fetch(`${origin}/api/changes`, {
+        method: 'POST', headers, body: JSON.stringify({ draft: validDraft, revision: refreshed.revision }),
       });
       assert.equal(saveResponse.status, 201);
       assert.equal(existsSync(join(root, 'changes/CHG-TEST-001/PLAN.md')), true);

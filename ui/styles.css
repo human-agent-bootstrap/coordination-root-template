@@ -119,9 +119,10 @@ details[open] summary { margin-bottom: 16px; }
 .validation-summary.success { border-color: #8fc8ad; background: #eef8f3; color: var(--success); }
 .validation-summary.error { border-color: #e8aaa5; background: #fff2f1; color: var(--danger); }
 .validation-summary ul { margin-bottom: 0; }
+.error-link { min-height: 0; padding: 2px 0; border: 0; background: transparent; color: inherit; text-align: left; text-decoration: underline; }
 .file-tabs { display: flex; gap: 6px; overflow-x: auto; margin-top: 20px; padding-bottom: 8px; }
 .file-tabs button { white-space: nowrap; background: var(--surface); border-color: var(--border); }
-.file-tabs button[aria-selected="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.file-tabs button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 pre { max-height: 440px; overflow: auto; padding: 20px; border-radius: var(--radius); background: #18212b; color: #eaf1f1; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 dialog { width: min(640px, calc(100vw - 32px)); border: 0; border-radius: 14px; padding: 0; box-shadow: 0 22px 70px rgba(24, 33, 43, .25); }

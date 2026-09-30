@@ -4,6 +4,10 @@ import YAML from 'yaml';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const CONTRACT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\.(?:json|md|ya?ml)$/i;
+const MAX_WORK_UNITS = 50;
+const MAX_PATHS_PER_UNIT = 100;
+const MAX_CONTRACTS = 25;
+const MAX_TEXT_LENGTH = 20_000;
 
 function text(value) {
   return String(value ?? '').trim();
@@ -106,6 +110,11 @@ export function validateDraft(input, context = {}) {
     add(errors, 'acceptanceCriteria', 'REQUIRED', '관찰 가능한 성공 기준을 하나 이상 정하세요.');
   }
   if (!draft.workUnits.length) add(errors, 'workUnits', 'REQUIRED', '담당자에게 배정할 작업을 하나 이상 만드세요.');
+  if (draft.workUnits.length > MAX_WORK_UNITS) add(errors, 'workUnits', 'LIMIT_EXCEEDED', `작업은 최대 ${MAX_WORK_UNITS}개까지 만들 수 있습니다.`);
+  if (draft.contracts.length > MAX_CONTRACTS) add(errors, 'contracts', 'LIMIT_EXCEEDED', `계약은 최대 ${MAX_CONTRACTS}개까지 만들 수 있습니다.`);
+  for (const [field, values] of Object.entries({ nonGoals: draft.nonGoals, userFlow: draft.userFlow, acceptanceCriteria: draft.acceptanceCriteria })) {
+    if (values.some((value) => value.length > MAX_TEXT_LENGTH)) add(errors, field, 'LIMIT_EXCEEDED', '각 항목은 20,000자를 넘을 수 없습니다.');
+  }
 
   for (const [index, serviceId] of draft.services.entries()) {
     if (!services.has(serviceId)) add(errors, `services.${index}`, 'UNKNOWN_SERVICE', `등록되지 않은 서비스 ${serviceId}입니다.`);
@@ -138,6 +147,7 @@ export function validateDraft(input, context = {}) {
     if (!unit.writer || unit.writer === 'unassigned') add(errors, `${prefix}.writer`, 'REQUIRED', '작업 담당자를 한 명 지정하세요.');
     else if (!ID_PATTERN.test(unit.writer)) add(errors, `${prefix}.writer`, 'INVALID_ID', '작업 담당자는 영문·숫자 식별자로 입력하세요.');
     if (!unit.writePaths.length) add(errors, `${prefix}.writePaths`, 'REQUIRED', '수정할 폴더나 파일을 하나 이상 지정하세요.');
+    if (unit.writePaths.length > MAX_PATHS_PER_UNIT) add(errors, `${prefix}.writePaths`, 'LIMIT_EXCEEDED', `수정 범위는 작업당 최대 ${MAX_PATHS_PER_UNIT}개입니다.`);
     for (const [pathIndex, path] of unit.writePaths.entries()) {
       if (!pathIsSafe(path)) add(errors, `${prefix}.writePaths.${pathIndex}`, 'UNSAFE_PATH', '수정 범위는 저장소 내부의 상대 경로여야 합니다.');
       else if (path !== '**' && path.includes('*') && !path.endsWith('/**')) {

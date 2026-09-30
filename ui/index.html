@@ -45,7 +45,7 @@
         <section class="step-panel" data-step="0">
           <div class="section-heading">
             <p class="eyebrow">1 · 변경 목표</p>
-            <h2>이번 회의에서 해결할 한 가지 결과는 무엇인가요?</h2>
+            <h2 tabindex="-1">이번 회의에서 해결할 한 가지 결과는 무엇인가요?</h2>
             <p>기술 구현보다 사용자가 경험할 변화를 먼저 적으세요.</p>
           </div>
           <div class="field-grid two">
@@ -69,7 +69,7 @@
         <section class="step-panel" data-step="1" hidden>
           <div class="section-heading">
             <p class="eyebrow">2 · 범위와 성공 기준</p>
-            <h2>무엇을 하고, 무엇을 하지 않을지 합의하세요.</h2>
+            <h2 tabindex="-1">무엇을 하고, 무엇을 하지 않을지 합의하세요.</h2>
             <p>각 항목은 한 줄씩 입력합니다. 비목표가 있어야 회의 중 범위가 커지지 않습니다.</p>
           </div>
           <label>이번 변경에서 하지 않을 일
@@ -93,7 +93,7 @@
           <div class="section-heading row-heading">
             <div>
               <p class="eyebrow">3 · 작업 분담</p>
-              <h2>누가 어떤 결과를 책임지나요?</h2>
+              <h2 tabindex="-1">누가 어떤 결과를 책임지나요?</h2>
               <p>기술 식별자와 브랜치는 자동으로 만들어집니다.</p>
             </div>
             <button class="secondary" id="add-unit" type="button">작업 추가</button>
@@ -124,7 +124,7 @@
         <section class="step-panel" data-step="3" hidden>
           <div class="section-heading">
             <p class="eyebrow">4 · 서비스 간 약속</p>
-            <h2>서로 다른 작업자가 공유해야 할 약속이 있나요?</h2>
+            <h2 tabindex="-1">서로 다른 작업자가 공유해야 할 약속이 있나요?</h2>
             <p>API, 이벤트, 데이터 형식처럼 서로의 구현을 추측하지 않게 만드는 기준입니다.</p>
           </div>
           <label class="check-line"><input name="noSharedContract" type="checkbox" checked> 공유 계약 없음</label>
@@ -139,7 +139,7 @@
           <div class="section-heading row-heading">
             <div>
               <p class="eyebrow">5 · 검토와 저장</p>
-              <h2>회의 결과를 저장하기 전에 확인하세요.</h2>
+              <h2 tabindex="-1">회의 결과를 저장하기 전에 확인하세요.</h2>
               <p>검증 통과는 사람의 승인을 의미하지 않습니다.</p>
             </div>
             <button class="primary" id="preview" type="button">계획 검토</button>
@@ -147,7 +147,7 @@
           <div id="review-empty" class="empty-state">계획 검토를 실행하면 차단 항목과 생성 파일이 여기에 표시됩니다.</div>
           <div id="review" hidden>
             <div id="validation-summary" class="validation-summary"></div>
-            <div id="file-tabs" class="file-tabs" role="tablist" aria-label="생성 파일"></div>
+            <div id="file-tabs" class="file-tabs" aria-label="생성 파일"></div>
             <p class="help">새 파일로 추가될 변경 내용입니다.</p>
             <pre id="file-preview" tabindex="0" aria-label="생성 예정 diff"></pre>
             <div class="actions"><button class="secondary" type="button" data-back="3">이전</button><button class="primary" id="save" type="button" disabled>새 Change 저장</button></div>

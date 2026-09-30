@@ -165,10 +165,40 @@ function renderErrors(errors) {
   const list = document.createElement('ul');
   for (const error of errors) {
     const item = document.createElement('li');
-    item.textContent = error.message;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'error-link';
+    button.textContent = error.message;
+    button.addEventListener('click', () => focusError(error.field));
+    item.append(button);
     list.append(item);
   }
   summary.replaceChildren(document.createTextNode('저장 전 확인이 필요합니다.'), list);
+}
+
+function focusError(field) {
+  const topLevel = field.split('.')[0];
+  const stepByField = {
+    changeId: 0, title: 0, coordinator: 0, goal: 0,
+    nonGoals: 1, userFlow: 1, acceptanceCriteria: 1, services: 1,
+    workUnits: 2, contracts: 3, review: 4,
+  };
+  showStep(stepByField[topLevel] ?? 4);
+  let target = form.elements[topLevel];
+  if (topLevel === 'workUnits') target = workUnits.querySelector('[data-unit]');
+  if (topLevel === 'services') target = form.querySelector('[name="services"]');
+  if (topLevel === 'contracts') target = form.elements.noSharedContract;
+  target?.focus();
+}
+
+function invalidatePreview() {
+  state.revision = null;
+  document.querySelector('#save').disabled = true;
+  const summary = document.querySelector('#validation-summary');
+  if (!document.querySelector('#review').hidden) {
+    summary.className = 'validation-summary';
+    summary.textContent = '입력 내용이 변경되었습니다. 저장 전에 계획 검토를 다시 실행하세요.';
+  }
 }
 
 async function preview() {
@@ -279,13 +309,12 @@ document.querySelector('#dispatch-open').addEventListener('click', () => documen
 document.querySelector('#check-dispatch').addEventListener('click', checkDispatch);
 form.elements.noSharedContract.addEventListener('change', ({ target }) => {
   document.querySelector('#contract-fields').hidden = target.checked;
-  state.revision = null;
+  invalidatePreview();
 });
-form.addEventListener('input', () => { state.revision = null; document.querySelector('#save').disabled = true; });
+form.addEventListener('input', invalidatePreview);
 form.addEventListener('change', () => {
   document.querySelectorAll('.unit-card').forEach(refreshUnitServices);
-  state.revision = null;
-  document.querySelector('#save').disabled = true;
+  invalidatePreview();
 });
 
 loadStatus().catch((error) => showMessage(error.message));

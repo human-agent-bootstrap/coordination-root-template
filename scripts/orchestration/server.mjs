@@ -86,7 +86,11 @@ export function repositoryContext(root) {
 function revisionFor(root, draft, files, context) {
   const hash = createHash('sha256');
   hash.update(context.head);
-  hash.update(git(root, ['status', '--porcelain']));
+  hash.update(git(root, ['status', '--porcelain=v1']));
+  hash.update(git(root, ['diff', '--binary', 'HEAD', '--', 'services/registry.yaml', '.gitmodules', 'changes']));
+  const untracked = git(root, ['ls-files', '--others', '--exclude-standard', '--', 'services/registry.yaml', '.gitmodules', 'changes'])
+    .split('\n').filter(Boolean).sort();
+  for (const path of untracked) hash.update(path).update('\0').update(readFileSync(join(root, path))).update('\0');
   hash.update(JSON.stringify(normalizeDraft(draft)));
   for (const [path, content] of files) hash.update(path).update('\0').update(content).update('\0');
   return hash.digest('hex');
@@ -119,12 +123,14 @@ function strictValidation(root, draft, files) {
 export function previewChange(root, input) {
   const context = repositoryContext(root);
   const checked = validateDraft(input, context);
-  if (!checked.valid) return { valid: false, errors: checked.errors };
+  if (!checked.valid) return { valid: false, errors: checked.errors, unresolved: checked.errors };
   if (context.changes.includes(checked.draft.changeId)) {
-    return { valid: false, errors: [{ field: 'changeId', code: 'EXISTS', message: `Change ${checked.draft.changeId}가 이미 존재합니다.` }] };
+    const errors = [{ field: 'changeId', code: 'EXISTS', message: `Change ${checked.draft.changeId}가 이미 존재합니다.` }];
+    return { valid: false, errors, unresolved: errors };
   }
   if (checked.draft.services.some((id) => !context.services.find((service) => service.id === id)?.baseSha)) {
-    return { valid: false, errors: [{ field: 'services', code: 'MISSING_BASE', message: '선택한 서비스의 작업 시작 기준 SHA를 확인할 수 없습니다.' }] };
+    const errors = [{ field: 'services', code: 'MISSING_BASE', message: '선택한 서비스의 작업 시작 기준 SHA를 확인할 수 없습니다.' }];
+    return { valid: false, errors, unresolved: errors };
   }
   const files = buildChangeFiles(checked.draft, { rootHead: context.head, services: context.services });
   const validation = strictValidation(root, checked.draft, files);
@@ -132,6 +138,7 @@ export function previewChange(root, input) {
   return {
     valid: validation.exitCode === 0,
     errors: validation.exitCode === 0 ? [] : [{ field: 'review', code: 'STRICT_VALIDATION', message: validation.output }],
+    unresolved: validation.exitCode === 0 ? [] : [{ field: 'review', code: 'STRICT_VALIDATION', message: validation.output }],
     revision,
     validation,
     files: [...files].map(([path, content]) => ({
