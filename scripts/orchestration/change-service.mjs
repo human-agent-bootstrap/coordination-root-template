@@ -140,6 +140,9 @@ export function validateDraft(input, context = {}) {
     if (!unit.writePaths.length) add(errors, `${prefix}.writePaths`, 'REQUIRED', '수정할 폴더나 파일을 하나 이상 지정하세요.');
     for (const [pathIndex, path] of unit.writePaths.entries()) {
       if (!pathIsSafe(path)) add(errors, `${prefix}.writePaths.${pathIndex}`, 'UNSAFE_PATH', '수정 범위는 저장소 내부의 상대 경로여야 합니다.');
+      else if (path !== '**' && path.includes('*') && !path.endsWith('/**')) {
+        add(errors, `${prefix}.writePaths.${pathIndex}`, 'UNSUPPORTED_SCOPE', '수정 범위는 정확한 파일 경로나 폴더/** 형식으로 입력하세요.');
+      }
     }
     const inherited = services.get(unit.service)?.verify ?? [];
     if (!unit.verify.length && !inherited.length) add(errors, `${prefix}.verify`, 'REQUIRED', '완료 확인 명령을 하나 이상 지정하세요.');

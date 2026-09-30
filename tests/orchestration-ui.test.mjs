@@ -234,6 +234,15 @@ test('validation requires safe coordinator and writer identifiers', () => {
   ]);
 });
 
+test('validation rejects glob forms that workflow-check cannot enforce', () => {
+  const result = validateDraft({
+    ...validDraft,
+    workUnits: [{ ...validDraft.workUnits[0], writePaths: ['src/*.js'] }],
+  }, { services: [{ id: 'api', verify: ['npm test'] }] });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(({ code }) => code === 'UNSUPPORTED_SCOPE'));
+});
+
 test('server reports repository state and registered service bases', async () => {
   const root = serverFixture();
   try {
