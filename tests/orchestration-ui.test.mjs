@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -235,23 +236,27 @@ test('validation requires safe coordinator and writer identifiers', () => {
 });
 
 test('validation rejects glob forms that workflow-check cannot enforce', () => {
-  const result = validateDraft({
-    ...validDraft,
-    workUnits: [{ ...validDraft.workUnits[0], writePaths: ['src/*.js'] }],
-  }, { services: [{ id: 'api', verify: ['npm test'] }] });
-  assert.equal(result.valid, false);
-  assert.ok(result.errors.some(({ code }) => code === 'UNSUPPORTED_SCOPE'));
+  for (const path of ['src/*.js', 'src/*/**', 'src/?/**', 'src/**/generated/**']) {
+    const result = validateDraft({
+      ...validDraft,
+      workUnits: [{ ...validDraft.workUnits[0], writePaths: [path] }],
+    }, { services: [{ id: 'api', verify: ['npm test'] }] });
+    assert.equal(result.valid, false, path);
+    assert.ok(result.errors.some(({ code }) => code === 'UNSUPPORTED_SCOPE'), path);
+  }
 });
 
-test('validation caps work units before pairwise analysis can block the server', () => {
+test('validation returns immediately when work unit count exceeds the limit', () => {
+  const started = performance.now();
   const result = validateDraft({
     ...validDraft,
-    workUnits: Array.from({ length: 51 }, (_, index) => ({
+    workUnits: Array.from({ length: 10_000 }, (_, index) => ({
       ...validDraft.workUnits[0], id: `work-${index}`, writePaths: [`src/${index}/**`],
     })),
   }, { services: [{ id: 'api', verify: ['npm test'] }] });
   assert.equal(result.valid, false);
   assert.ok(result.errors.some(({ code }) => code === 'LIMIT_EXCEEDED'));
+  assert.ok(performance.now() - started < 1_000);
 });
 
 test('server reports repository state and registered service bases', async () => {
@@ -387,7 +392,9 @@ work_units:
   - id: api-change
     repo: api
     state: ready
-    goal: implement
+    goal: |
+      implement
+      Packet SHA-256: ${'f'.repeat(64)}
     branch: feat/CHG-APPROVED-001/api-change
     base_sha: ${serviceSha}
     writer: alice
@@ -437,7 +444,12 @@ work_units:
       const packet = await packetResponse.json();
       assert.equal(packet.path, '.task-packets/run-api-001.md');
       assert.match(packet.digest, /^[0-9a-f]{64}$/);
-      assert.match(readFileSync(join(root, packet.path), 'utf8'), new RegExp(`Plan SHA: ${planSha}`));
+      assert.notEqual(packet.digest, 'f'.repeat(64));
+      const packetContent = readFileSync(join(root, packet.path), 'utf8');
+      assert.match(packetContent, new RegExp(`Plan SHA: ${planSha}`));
+      const marker = '\nPacket SHA-256: ';
+      const markerIndex = packetContent.lastIndexOf(marker);
+      assert.equal(packet.digest, createHash('sha256').update(packetContent.slice(0, markerIndex + 1)).digest('hex'));
     });
   } finally {
     rmSync(root, { recursive: true, force: true });

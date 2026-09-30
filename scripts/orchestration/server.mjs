@@ -20,6 +20,7 @@ const moduleRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const BODY_LIMIT = 1024 * 1024;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const FULL_SHA = /^[0-9a-f]{40}$/i;
+const SHA256 = /^[0-9a-f]{64}$/i;
 
 function git(root, args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -229,9 +230,20 @@ function createPacket(root, request) {
   if (result.status !== 0) throw new Error((result.stderr || result.stdout || '작업 패킷 생성에 실패했습니다.').trim());
   const relativePath = `.task-packets/${request.run}.md`;
   const content = readFileSync(join(root, relativePath), 'utf8');
+  const marker = '\nPacket SHA-256: ';
+  const markerIndex = content.lastIndexOf(marker);
+  const declaredDigest = markerIndex >= 0
+    ? content.slice(markerIndex + marker.length).trim()
+    : '';
+  const computedDigest = markerIndex >= 0
+    ? createHash('sha256').update(content.slice(0, markerIndex + 1)).digest('hex')
+    : '';
+  if (!SHA256.test(declaredDigest) || declaredDigest !== computedDigest) {
+    throw new Error('생성된 작업 패킷의 무결성 검증에 실패했습니다.');
+  }
   return {
     path: relativePath,
-    digest: content.match(/Packet SHA-256: ([0-9a-f]{64})/)?.[1] ?? createHash('sha256').update(content).digest('hex'),
+    digest: declaredDigest,
     content,
   };
 }

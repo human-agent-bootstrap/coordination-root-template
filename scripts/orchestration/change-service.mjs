@@ -115,6 +115,9 @@ export function validateDraft(input, context = {}) {
   for (const [field, values] of Object.entries({ nonGoals: draft.nonGoals, userFlow: draft.userFlow, acceptanceCriteria: draft.acceptanceCriteria })) {
     if (values.some((value) => value.length > MAX_TEXT_LENGTH)) add(errors, field, 'LIMIT_EXCEEDED', '각 항목은 20,000자를 넘을 수 없습니다.');
   }
+  if (draft.workUnits.length > MAX_WORK_UNITS || draft.contracts.length > MAX_CONTRACTS) {
+    return { valid: false, errors, draft };
+  }
 
   for (const [index, serviceId] of draft.services.entries()) {
     if (!services.has(serviceId)) add(errors, `services.${index}`, 'UNKNOWN_SERVICE', `등록되지 않은 서비스 ${serviceId}입니다.`);
@@ -150,7 +153,9 @@ export function validateDraft(input, context = {}) {
     if (unit.writePaths.length > MAX_PATHS_PER_UNIT) add(errors, `${prefix}.writePaths`, 'LIMIT_EXCEEDED', `수정 범위는 작업당 최대 ${MAX_PATHS_PER_UNIT}개입니다.`);
     for (const [pathIndex, path] of unit.writePaths.entries()) {
       if (!pathIsSafe(path)) add(errors, `${prefix}.writePaths.${pathIndex}`, 'UNSAFE_PATH', '수정 범위는 저장소 내부의 상대 경로여야 합니다.');
-      else if (path !== '**' && path.includes('*') && !path.endsWith('/**')) {
+      const unsupportedGlob = ['?', '[', ']', '{', '}'].some((character) => path.includes(character))
+        || (path !== '**' && (path.match(/\*/g)?.length ?? 0) !== (path.endsWith('/**') ? 2 : 0));
+      if (pathIsSafe(path) && unsupportedGlob) {
         add(errors, `${prefix}.writePaths.${pathIndex}`, 'UNSUPPORTED_SCOPE', '수정 범위는 정확한 파일 경로나 폴더/** 형식으로 입력하세요.');
       }
     }
