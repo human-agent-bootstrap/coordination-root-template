@@ -1,0 +1,60 @@
+schema_version: 1
+change_id: CHG-ORCH-001
+state: approved
+plan_base_sha: d6998c8d30f38cb35d4b0c22e7ba3f459e989248
+plan_merge_sha: pending
+work_units:
+  - id: contract-and-plan
+    repo: root
+    state: in_progress
+    goal: Approve the scope, contracts, work boundaries, and verification gates.
+    branch: change/CHG-ORCH-001/coordination
+    base_sha: d6998c8d30f38cb35d4b0c22e7ba3f459e989248
+    writer: coordinator
+    write_paths:
+      - changes/CHG-ORCH-001/**
+    depends_on: []
+    verify:
+      - npm test
+      - npm run verify:registry -- --change CHG-ORCH-001 --strict
+  - id: planning-ui-mvp
+    repo: root
+    state: ready
+    goal: Provide the guided local UI that compiles a planning meeting into validated Change artifacts and approved task packets.
+    branch: feat/CHG-ORCH-001/planning-ui-mvp
+    base_sha: d6998c8d30f38cb35d4b0c22e7ba3f459e989248
+    writer: jpyoon
+    write_paths:
+      - package.json
+      - README.md
+      - RUNBOOK.md
+      - scripts/orchestration-server.mjs
+      - scripts/orchestration/**
+      - ui/**
+      - tests/orchestration-ui.test.mjs
+      - e2e/orchestration-ui.test.mjs
+    depends_on:
+      - contract-and-plan
+    verify:
+      - npm test
+      - npm run verify:registry -- --strict
+      - npm run test:ui
+  - id: candidate-integration
+    repo: root
+    state: draft
+    goal: Pin reviewed service merge SHAs and verify the exact candidate.
+    branch: change/CHG-ORCH-001/candidate-integration
+    base_sha: pending-plan-merge
+    writer: coordinator
+    write_paths:
+      - changes/CHG-ORCH-001/WORK_UNITS.yaml
+      - changes/CHG-ORCH-001/PRS.yaml
+      - changes/CHG-ORCH-001/STATUS.md
+      - changes/CHG-ORCH-001/releases/**
+      - e2e/**
+    depends_on:
+      - planning-ui-mvp
+    verify:
+      - npm test
+      - npm run verify:prs -- --change CHG-ORCH-001
+      - npm run verify:candidate -- --change CHG-ORCH-001 --target-ref origin/main
