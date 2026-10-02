@@ -87,15 +87,19 @@ const validDraft = {
   changeId: 'CHG-TEST-001',
   title: '계획 회의 산출물',
   coordinator: 'jpyoon',
-  goal: '회의 내용을 검증 가능한 작업 계획으로 만든다.',
+  goals: [
+    { id: 'GOAL-001', title: '계획 작성', outcome: '회의 내용을 검증 가능한 작업 계획으로 만든다.', participants: ['planning-team'] },
+  ],
   nonGoals: ['GitHub 작업은 자동화하지 않는다.'],
-  userFlow: ['회의 내용을 작성한다.', '산출물을 검토하고 저장한다.'],
+  hasUserFlow: false,
+  userFlow: [],
   acceptanceCriteria: ['계획 파일이 생성된다.', '승인 전 패킷 발급이 차단된다.'],
   services: ['api'],
   noSharedContract: true,
   contracts: [],
   workUnits: [{
-    id: 'api-change',
+    id: '',
+    goalId: 'GOAL-001',
     service: 'api',
     goal: 'API 변경을 구현한다.',
     writer: 'alice',
@@ -106,12 +110,161 @@ const validDraft = {
 };
 
 test('validation reports plain field-addressable errors', () => {
-  const result = validateDraft({ ...validDraft, goal: '', acceptanceCriteria: [], workUnits: [] }, {
+  const result = validateDraft({ ...validDraft, goals: [], acceptanceCriteria: [], workUnits: [] }, {
     services: [{ id: 'api', verify: ['npm test'] }],
   });
   assert.equal(result.valid, false);
-  assert.deepEqual(result.errors.map(({ field }) => field), ['goal', 'acceptanceCriteria', 'workUnits']);
+  assert.deepEqual(result.errors.map(({ field }) => field), ['goals', 'acceptanceCriteria', 'workUnits']);
   assert.match(result.errors[0].message, /목표/);
+});
+
+test('user flow is optional unless explicitly enabled', () => {
+  const optional = validateDraft({ ...validDraft, hasUserFlow: false, userFlow: [] }, {
+    services: [{ id: 'api', verify: ['npm test'] }],
+  });
+  assert.equal(optional.valid, true);
+
+  const required = validateDraft({ ...validDraft, hasUserFlow: true, userFlow: [] }, {
+    services: [{ id: 'api', verify: ['npm test'] }],
+  });
+  assert.equal(required.valid, false);
+  assert.ok(required.errors.some(({ field }) => field === 'userFlow'));
+});
+
+test('non-goals can be explicitly declared empty', () => {
+  const result = validateDraft({ ...validDraft, noNonGoals: true, nonGoals: [] }, {
+    services: [{ id: 'api', verify: ['npm test'] }],
+  });
+  assert.equal(result.valid, true);
+});
+
+test('work unit verification commands are optional when the service has no defaults', () => {
+  const result = validateDraft(validDraft, {
+    services: [{ id: 'api', verify: [] }],
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.some(({ field }) => field === 'workUnits.0.verify'), false);
+
+  const files = buildChangeFiles(validDraft, {
+    rootHead: 'b'.repeat(40),
+    services: [{ id: 'api', path: 'services/api', verify: [], baseSha }],
+  });
+  const manifest = YAML.parse(files.get('WORK_UNITS.yaml'));
+  const unit = manifest.work_units.find(({ id }) => id === 'api');
+  assert.equal(unit.state, 'draft');
+  assert.deepEqual(unit.verify, []);
+
+  const omittedDefaults = buildChangeFiles(validDraft, {
+    rootHead: 'b'.repeat(40),
+    services: [{ id: 'api', path: 'services/api', baseSha }],
+  });
+  const omittedManifest = YAML.parse(omittedDefaults.get('WORK_UNITS.yaml'));
+  const omittedUnit = omittedManifest.work_units.find(({ id }) => id === 'api');
+  assert.equal(omittedUnit.state, 'draft');
+  assert.deepEqual(omittedUnit.verify, []);
+});
+
+test('implementation dependencies remain draft until their predecessors merge', () => {
+  const files = buildChangeFiles({
+    ...validDraft,
+    workUnits: [
+      { ...validDraft.workUnits[0], id: 'api-base', writePaths: ['src/base/**'] },
+      {
+        ...validDraft.workUnits[0],
+        id: 'api-follow-up',
+        writePaths: ['src/follow-up/**'],
+        dependsOn: ['api-base'],
+        verify: ['npm test'],
+      },
+    ],
+  }, {
+    rootHead: 'b'.repeat(40),
+    services: [{ id: 'api', path: 'services/api', verify: [], baseSha }],
+  });
+  const manifest = YAML.parse(files.get('WORK_UNITS.yaml'));
+  assert.equal(manifest.work_units.find(({ id }) => id === 'api-base').state, 'draft');
+  assert.equal(manifest.work_units.find(({ id }) => id === 'api-follow-up').state, 'draft');
+});
+
+test('goal participants are ignored by the current product model', () => {
+  const result = validateDraft({
+    ...validDraft,
+    goals: [{ ...validDraft.goals[0], participants: ['legacy-team'] }],
+  }, { services: [{ id: 'api', verify: ['npm test'] }] });
+  assert.deepEqual(result.draft.goals[0], {
+    id: 'GOAL-001',
+    title: '계획 작성',
+    outcome: '회의 내용을 검증 가능한 작업 계획으로 만든다.',
+  });
+  const files = buildChangeFiles(result.draft, {
+    rootHead: 'b'.repeat(40),
+    services: [{ id: 'api', path: 'services/api', verify: ['npm test'], baseSha }],
+  });
+  assert.doesNotMatch(files.get('PLAN.md'), /Participants|legacy-team/);
+});
+
+test('work unit IDs are generated and every unit belongs to one goal', () => {
+  const normalized = validateDraft({
+    ...validDraft,
+    workUnits: [{ ...validDraft.workUnits[0], id: '', goal: 'API 인증 개선' }],
+  }, { services: [{ id: 'api', verify: ['npm test'] }] });
+  assert.equal(normalized.valid, true);
+  assert.equal(normalized.draft.workUnits[0].id, 'api');
+  assert.equal(normalized.draft.workUnits[0].goalId, 'GOAL-001');
+
+  const missingGoal = validateDraft({
+    ...validDraft,
+    workUnits: [{ ...validDraft.workUnits[0], goalId: 'GOAL-404' }],
+  }, { services: [{ id: 'api', verify: ['npm test'] }] });
+  assert.equal(missingGoal.valid, false);
+  assert.ok(missingGoal.errors.some(({ code }) => code === 'UNKNOWN_GOAL'));
+});
+
+test('goal IDs remain stable when an earlier goal is removed', () => {
+  const result = validateDraft({
+    ...validDraft,
+    goals: [{ id: 'GOAL-002', title: '두 번째 목표', outcome: '두 번째 결과' }],
+    workUnits: [{ ...validDraft.workUnits[0], goalId: 'GOAL-002' }],
+  }, { services: [{ id: 'api', verify: ['npm test'] }] });
+  assert.equal(result.valid, true);
+  assert.equal(result.draft.goals[0].id, 'GOAL-002');
+  assert.equal(result.draft.workUnits[0].goalId, 'GOAL-002');
+});
+
+test('duplicate goal IDs are rejected', () => {
+  const result = validateDraft({
+    ...validDraft,
+    goals: [validDraft.goals[0], { ...validDraft.goals[0] }],
+  }, { services: [{ id: 'api', verify: ['npm test'] }] });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(({ code }) => code === 'DUPLICATE_ID'));
+});
+
+test('generated work unit IDs remain unique and inside the identifier limit', () => {
+  const service = 's'.repeat(128);
+  const result = validateDraft({
+    ...validDraft,
+    services: [service],
+    workUnits: [
+      { ...validDraft.workUnits[0], service },
+      { ...validDraft.workUnits[0], service, writePaths: ['tests/**'] },
+    ],
+  }, { services: [{ id: service, verify: ['npm test'] }] });
+  assert.equal(result.draft.workUnits[0].id, service);
+  assert.equal(result.draft.workUnits[1].id, `${'s'.repeat(126)}-2`);
+  assert.equal(result.errors.some(({ code }) => code === 'INVALID_ID'), false);
+});
+
+test('duplicate explicit work unit IDs are rejected', () => {
+  const result = validateDraft({
+    ...validDraft,
+    workUnits: [
+      { ...validDraft.workUnits[0], id: 'api-change' },
+      { ...validDraft.workUnits[0], id: 'api-change', writePaths: ['tests/**'] },
+    ],
+  }, { services: [{ id: 'api', verify: ['npm test'] }] });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(({ code }) => code === 'DUPLICATE_ID'));
 });
 
 test('validation blocks parallel work units with overlapping paths', () => {
@@ -141,22 +294,26 @@ test('build derives branches, base SHAs, inherited checks, and canonical files',
     'releases/candidate-001.yaml',
   ]);
   const manifest = YAML.parse(files.get('WORK_UNITS.yaml'));
-  const unit = manifest.work_units.find(({ id }) => id === 'api-change');
-  assert.equal(unit.branch, 'feat/CHG-TEST-001/api-change');
+  const unit = manifest.work_units.find(({ id }) => id === 'api');
+  assert.equal(unit.branch, 'feat/CHG-TEST-001/api');
   assert.equal(unit.base_sha, baseSha);
   assert.deepEqual(unit.verify, ['npm test']);
+  assert.equal(unit.goal_id, 'GOAL-001');
+  assert.match(files.get('PLAN.md'), /## Goals/);
+  assert.match(files.get('PLAN.md'), /GOAL-001 — 계획 작성/);
+  assert.doesNotMatch(files.get('PLAN.md'), /## User flow/);
   assert.match(files.get('PLAN.md'), /\[AC-001\] 계획 파일이 생성된다/);
 });
 
-test('generated manifest is approval-ready while dispatch remains SHA-gated', () => {
+test('generated manifest remains draft while dispatch remains SHA-gated', () => {
   const files = buildChangeFiles(validDraft, {
     rootHead: 'b'.repeat(40),
     services: [{ id: 'api', path: 'services/api', verify: ['npm test'], baseSha }],
   });
   const manifest = YAML.parse(files.get('WORK_UNITS.yaml'));
-  assert.equal(manifest.state, 'approved');
+  assert.equal(manifest.state, 'draft');
   assert.equal(manifest.work_units.find(({ id }) => id === 'contract-and-plan').state, 'in_progress');
-  assert.equal(manifest.work_units.find(({ id }) => id === 'api-change').state, 'ready');
+  assert.equal(manifest.work_units.find(({ id }) => id === 'api').state, 'ready');
 });
 
 test('save writes a complete artifact set and refuses overwrite', () => {
@@ -196,12 +353,105 @@ test('validation rejects duplicate contract file names', () => {
     ...validDraft,
     noSharedContract: false,
     contracts: [
-      { name: 'api.md', content: 'first' },
-      { name: 'api.md', content: 'second' },
+      { name: 'api.md', content: 'first', serviceIds: ['api', 'web'] },
+      { name: 'api.md', content: 'second', serviceIds: ['api', 'web'] },
     ],
-  }, { services: [{ id: 'api', verify: ['npm test'] }] });
+    services: ['api', 'web'],
+    workUnits: [
+      validDraft.workUnits[0],
+      { ...validDraft.workUnits[0], service: 'web', goal: 'Web 변경', writePaths: ['src/web/**'] },
+    ],
+  }, { services: [{ id: 'api', verify: ['npm test'] }, { id: 'web', verify: ['npm test'] }] });
   assert.equal(result.valid, false);
   assert.ok(result.errors.some(({ code }) => code === 'DUPLICATE_CONTRACT'));
+});
+
+test('shared contracts identify at least two participating services', () => {
+  const result = validateDraft({
+    ...validDraft,
+    noSharedContract: false,
+    contracts: [{ name: 'api.md', content: '# API', serviceIds: ['api'] }],
+  }, { services: [{ id: 'api', verify: ['npm test'] }] });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(({ field }) => field === 'contracts.0.serviceIds'));
+});
+
+test('shared contract participants must be explicit and distinct', () => {
+  const context = { services: [{ id: 'api', verify: ['npm test'] }, { id: 'web', verify: ['npm test'] }] };
+  for (const serviceIds of [[], ['api', 'api']]) {
+    const result = validateDraft({
+      ...validDraft,
+      services: ['api', 'web'],
+      noSharedContract: false,
+      contracts: [{ name: 'api.md', content: '# API', serviceIds }],
+      workUnits: [
+        validDraft.workUnits[0],
+        { ...validDraft.workUnits[0], service: 'web', goal: 'Web 변경', writePaths: ['src/web/**'] },
+      ],
+    }, context);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some(({ field }) => field === 'contracts.0.serviceIds'));
+  }
+});
+
+test('JSON and YAML contracts are written byte-for-byte', () => {
+  const files = buildChangeFiles({
+    ...validDraft,
+    services: ['api', 'web'],
+    noSharedContract: false,
+    contracts: [
+      { name: 'api.json', content: '{"version":1}\n', serviceIds: ['api', 'web'] },
+      { name: 'event.yaml', content: 'version: 1\n', serviceIds: ['api', 'web'] },
+    ],
+    workUnits: [
+      validDraft.workUnits[0],
+      { ...validDraft.workUnits[0], service: 'web', goal: 'Web 변경', writePaths: ['src/web/**'] },
+    ],
+  }, {
+    rootHead: 'b'.repeat(40),
+    services: [
+      { id: 'api', path: 'services/api', verify: ['npm test'], baseSha },
+      { id: 'web', path: 'services/web', verify: ['npm test'], baseSha: 'c'.repeat(40) },
+    ],
+  });
+  assert.equal(files.get('contracts/api.json'), '{"version":1}\n');
+  assert.equal(files.get('contracts/event.yaml'), 'version: 1\n');
+});
+
+test('validation rejects malformed JSON contract content', () => {
+  const result = validateDraft({
+    ...validDraft,
+    services: ['api', 'web'],
+    noSharedContract: false,
+    contracts: [{ name: 'openapi.json', content: '{"openapi":', serviceIds: ['api', 'web'] }],
+    workUnits: [
+      validDraft.workUnits[0],
+      { ...validDraft.workUnits[0], service: 'web', goal: 'Web 변경', writePaths: ['src/web/**'] },
+    ],
+  }, { services: [{ id: 'api', verify: ['npm test'] }, { id: 'web', verify: ['npm test'] }] });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(({ code }) => code === 'INVALID_JSON'));
+});
+
+test('generated plan names the repositories participating in a shared contract', () => {
+  const files = buildChangeFiles({
+    ...validDraft,
+    services: ['api', 'web'],
+    noSharedContract: false,
+    contracts: [{ name: 'search-api.md', content: '# Search API', serviceIds: ['api', 'web'] }],
+    workUnits: [
+      validDraft.workUnits[0],
+      { ...validDraft.workUnits[0], service: 'web', goal: '검색 화면 변경', writePaths: ['src/web/**'] },
+    ],
+  }, {
+    rootHead: 'b'.repeat(40),
+    services: [
+      { id: 'api', path: 'services/api', verify: ['npm test'], baseSha },
+      { id: 'web', path: 'services/web', verify: ['npm test'], baseSha: 'c'.repeat(40) },
+    ],
+  });
+  assert.match(files.get('PLAN.md'), /`contracts\/search-api\.md` \(api ↔ web\)/);
+  assert.equal(files.get('contracts/search-api.md'), '# Search API\n');
 });
 
 test('validation requires every work unit service to participate in the Change', () => {
@@ -246,6 +496,50 @@ test('validation rejects glob forms that workflow-check cannot enforce', () => {
   }
 });
 
+test('full-repository scope is limited to the first Work Unit of a new service', () => {
+  const existing = validateDraft({
+    ...validDraft,
+    workUnits: [{ ...validDraft.workUnits[0], writePaths: ['**'] }],
+  }, { services: [{ id: 'api', verify: ['npm test'], bootstrapEligible: false }] });
+  assert.ok(existing.errors.some(({ code }) => code === 'FULL_SCOPE_NOT_ALLOWED'));
+
+  const firstNew = validateDraft({
+    ...validDraft,
+    workUnits: [{ ...validDraft.workUnits[0], writePaths: ['**'] }],
+  }, { services: [{ id: 'api', verify: ['npm test'], bootstrapEligible: true }] });
+  assert.equal(firstNew.valid, true);
+
+  const secondNew = validateDraft({
+    ...validDraft,
+    workUnits: [
+      { ...validDraft.workUnits[0], writePaths: ['src/**'] },
+      { ...validDraft.workUnits[0], writePaths: ['**'] },
+    ],
+  }, { services: [{ id: 'api', verify: ['npm test'], bootstrapEligible: true }] });
+  assert.ok(secondNew.errors.some(({ code }) => code === 'FULL_SCOPE_NOT_ALLOWED'));
+});
+
+test('full-repository scope cannot depend on another implementation for the same service', () => {
+  const result = validateDraft({
+    ...validDraft,
+    workUnits: [
+      {
+        ...validDraft.workUnits[0],
+        id: 'api-full',
+        writePaths: ['**'],
+        dependsOn: ['api-bootstrap'],
+      },
+      {
+        ...validDraft.workUnits[0],
+        id: 'api-bootstrap',
+        writePaths: ['README.md'],
+      },
+    ],
+  }, { services: [{ id: 'api', verify: [], bootstrapEligible: true }] });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(({ code }) => code === 'FULL_SCOPE_NOT_ALLOWED'));
+});
+
 test('validation returns immediately when work unit count exceeds the limit', () => {
   const started = performance.now();
   const result = validateDraft({
@@ -270,10 +564,93 @@ test('server reports repository state and registered service bases', async () =>
       assert.match(status.head, /^[0-9a-f]{40}$/);
       assert.equal(status.services[0].id, 'api');
       assert.match(status.services[0].baseSha, /^[0-9a-f]{40}$/);
+      assert.equal(status.services[0].bootstrapEligible, true);
       assert.deepEqual(status.changes, []);
     });
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('service registration API previews a derived service without applying it', async () => {
+  const root = serverFixture();
+  try {
+    await withServer(root, async (origin) => {
+      const response = await fetch(`${origin}/api/services/preview`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ repo: 'https://github.com/acme/payments-api.git' }),
+      });
+      assert.equal(response.status, 200);
+      const preview = await response.json();
+      assert.equal(preview.service.id, 'payments-api');
+      assert.equal(preview.service.path, 'services/payments-api');
+      assert.equal(preview.service.owners[0], '@acme');
+      assert.equal(preview.service.stack, 'unspecified');
+      assert.equal(existsSync(join(root, 'services/payments-api')), false);
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('service registration API applies a dry-run-approved repository without verify commands', async () => {
+  const root = serverFixture();
+  const remoteRoot = mkdtempSync(join(tmpdir(), 'orchestration-service-remote-'));
+  const source = join(remoteRoot, 'source');
+  const bare = join(remoteRoot, 'payments-api.git');
+  const previousEnv = {
+    count: process.env.GIT_CONFIG_COUNT,
+    key: process.env.GIT_CONFIG_KEY_0,
+    value: process.env.GIT_CONFIG_VALUE_0,
+    protocols: process.env.GIT_ALLOW_PROTOCOL,
+  };
+  try {
+    mkdirSync(source, { recursive: true });
+    execFileSync('git', ['init', '-qb', 'main'], { cwd: source });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: source });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: source });
+    writeFileSync(join(source, 'package.json'), '{"scripts":{"test":"node --test"}}\n');
+    execFileSync('git', ['add', '.'], { cwd: source });
+    execFileSync('git', ['commit', '-qm', 'base'], { cwd: source });
+    execFileSync('git', ['clone', '--bare', source, bare]);
+    process.env.GIT_CONFIG_COUNT = '1';
+    process.env.GIT_CONFIG_KEY_0 = `url.file://${remoteRoot}/.insteadOf`;
+    process.env.GIT_CONFIG_VALUE_0 = 'https://github.com/acme/';
+    process.env.GIT_ALLOW_PROTOCOL = 'file:https';
+
+    await withServer(root, async (origin) => {
+      const headers = { 'content-type': 'application/json' };
+      const repo = 'https://github.com/acme/payments-api.git';
+      const previewResponse = await fetch(`${origin}/api/services/preview`, {
+        method: 'POST', headers, body: JSON.stringify({ repo }),
+      });
+      assert.equal(previewResponse.status, 200);
+      const preview = await previewResponse.json();
+      assert.equal(preview.service.stack, 'node');
+      assert.equal(preview.service.marker, 'package.json');
+
+      const applyResponse = await fetch(`${origin}/api/services`, {
+        method: 'POST', headers, body: JSON.stringify({ repo, stack: preview.service.stack }),
+      });
+      assert.equal(applyResponse.status, 201, await applyResponse.text());
+      const registry = readFileSync(join(root, 'services/registry.yaml'), 'utf8');
+      assert.match(registry, /id: payments-api/);
+      assert.match(registry, /verify: \[\]/);
+      assert.equal(existsSync(join(root, 'services/payments-api/.git')), true);
+    });
+  } finally {
+    for (const [key, value] of Object.entries({
+      GIT_CONFIG_COUNT: previousEnv.count,
+      GIT_CONFIG_KEY_0: previousEnv.key,
+      GIT_CONFIG_VALUE_0: previousEnv.value,
+      GIT_ALLOW_PROTOCOL: previousEnv.protocols,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(root, { recursive: true, force: true });
+    rmSync(remoteRoot, { recursive: true, force: true });
   }
 });
 
@@ -287,6 +664,44 @@ test('registry v2 requires every service base to come from a committed gitlink',
     execFileSync('git', ['add', 'services/registry.yaml', '.gitmodules'], { cwd: root });
     execFileSync('git', ['commit', '-qm', 'root without service gitlink'], { cwd: root });
     assert.throws(() => repositoryContext(root), /등록 커밋/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('staged-only service registration is visible but cannot anchor a plan', async () => {
+  const root = serverFixture();
+  const service = join(root, 'services/payments-api');
+  try {
+    mkdirSync(service, { recursive: true });
+    execFileSync('git', ['init', '-qb', 'main'], { cwd: service });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: service });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: service });
+    writeFileSync(join(service, 'README.md'), 'payments\n');
+    execFileSync('git', ['add', '.'], { cwd: service });
+    execFileSync('git', ['commit', '-qm', 'service base'], { cwd: service });
+    writeFileSync(join(root, 'services/registry.yaml'), `${readFileSync(join(root, 'services/registry.yaml'), 'utf8')}  - id: payments-api\n    path: services/payments-api\n    repo: https://github.com/acme/payments-api.git\n    owners: [acme/payments-api]\n    verify: []\n`);
+    writeFileSync(join(root, '.gitmodules'), `${readFileSync(join(root, '.gitmodules'), 'utf8')}[submodule "services/payments-api"]\n  path = services/payments-api\n  url = https://github.com/acme/payments-api.git\n`);
+    execFileSync('git', ['add', 'services/registry.yaml', '.gitmodules', 'services/payments-api'], { cwd: root });
+
+    const status = repositoryContext(root);
+    assert.equal(status.services.find(({ id }) => id === 'payments-api').baseSha, null);
+
+    await withServer(root, async (origin) => {
+      const draft = {
+        ...validDraft,
+        services: ['payments-api'],
+        workUnits: [{ ...validDraft.workUnits[0], service: 'payments-api', writePaths: ['src/**'] }],
+      };
+      const response = await fetch(`${origin}/api/changes/preview`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(draft),
+      });
+      assert.equal(response.status, 422);
+      const result = await response.json();
+      assert.ok(result.errors.some(({ code }) => code === 'MISSING_BASE'));
+    });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

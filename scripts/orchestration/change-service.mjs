@@ -65,28 +65,51 @@ function add(errors, field, code, message) {
 }
 
 export function normalizeDraft(input = {}) {
-  const workUnits = Array.isArray(input.workUnits) ? input.workUnits.map((raw, index) => ({
-    id: text(raw.id) || slug(raw.goal || `work-${index + 1}`),
-    service: text(raw.service),
-    goal: text(raw.goal),
-    writer: text(raw.writer),
-    writePaths: list(raw.writePaths),
-    dependsOn: list(raw.dependsOn),
-    verify: list(raw.verify),
-  })) : [];
+  const userFlow = list(input.userFlow);
+  const goals = Array.isArray(input.goals) ? input.goals.map((raw, index) => ({
+    id: ID_PATTERN.test(text(raw?.id)) ? text(raw.id) : `GOAL-${String(index + 1).padStart(3, '0')}`,
+    title: text(raw?.title),
+    outcome: text(raw?.outcome),
+  })) : (text(input.goal) ? [{
+    id: 'GOAL-001',
+    title: text(input.title) || 'Primary goal',
+    outcome: text(input.goal),
+  }] : []);
+  const workUnits = Array.isArray(input.workUnits) ? input.workUnits.map((raw, index) => {
+    const baseId = text(raw.id) || slug(raw.service || raw.goal || `work-${index + 1}`);
+    const priorGeneratedIds = input.workUnits.slice(0, index)
+      .filter((candidate) => !text(candidate.id))
+      .map((candidate) => slug(candidate.service || candidate.goal || 'work'));
+    const occurrence = priorGeneratedIds.filter((id) => id === baseId).length + 1;
+    const suffix = occurrence > 1 ? `-${occurrence}` : '';
+    const id = text(raw.id) || `${baseId.slice(0, 128 - suffix.length)}${suffix}`;
+    return {
+      id,
+      goalId: text(raw.goalId) || goals[0]?.id || '',
+      service: text(raw.service),
+      goal: text(raw.goal),
+      writer: text(raw.writer),
+      writePaths: list(raw.writePaths),
+      dependsOn: list(raw.dependsOn),
+      verify: list(raw.verify),
+    };
+  }) : [];
   return {
     changeId: text(input.changeId).toUpperCase(),
     title: text(input.title),
     coordinator: text(input.coordinator),
-    goal: text(input.goal),
+    goals,
+    noNonGoals: Boolean(input.noNonGoals),
     nonGoals: list(input.nonGoals),
-    userFlow: list(input.userFlow),
+    hasUserFlow: input.hasUserFlow === undefined ? userFlow.length > 0 : Boolean(input.hasUserFlow),
+    userFlow,
     acceptanceCriteria: list(input.acceptanceCriteria),
     services: list(input.services),
     noSharedContract: Boolean(input.noSharedContract),
     contracts: Array.isArray(input.contracts) ? input.contracts.map((contract) => ({
       name: text(contract?.name),
       content: String(contract?.content ?? ''),
+      serviceIds: list(contract?.serviceIds),
     })) : [],
     workUnits,
   };
@@ -103,9 +126,16 @@ export function validateDraft(input, context = {}) {
   if (!draft.title) add(errors, 'title', 'REQUIRED', '변경 제목을 입력하세요.');
   if (!draft.coordinator) add(errors, 'coordinator', 'REQUIRED', '회의 진행자를 입력하세요.');
   else if (!ID_PATTERN.test(draft.coordinator)) add(errors, 'coordinator', 'INVALID_ID', '회의 진행자는 영문·숫자 식별자로 입력하세요.');
-  if (!draft.goal) add(errors, 'goal', 'REQUIRED', '완료 후 사용자에게 달라지는 목표를 입력하세요.');
-  if (!draft.nonGoals.length) add(errors, 'nonGoals', 'REQUIRED', '범위가 커지지 않도록 비목표를 하나 이상 정하세요.');
-  if (!draft.userFlow.length) add(errors, 'userFlow', 'REQUIRED', '회의부터 결과 확인까지 사용자 흐름을 하나 이상 정하세요.');
+  if (!draft.goals.length) add(errors, 'goals', 'REQUIRED', '달성할 목표를 하나 이상 정하세요.');
+  const seenGoalIds = new Set();
+  for (const [index, goal] of draft.goals.entries()) {
+    if (!goal.title) add(errors, `goals.${index}.title`, 'REQUIRED', '목표 제목을 입력하세요.');
+    if (!goal.outcome) add(errors, `goals.${index}.outcome`, 'REQUIRED', '목표를 달성했을 때 달라지는 점을 입력하세요.');
+    if (seenGoalIds.has(goal.id)) add(errors, `goals.${index}.id`, 'DUPLICATE_ID', `목표 ID ${goal.id}가 중복됩니다.`);
+    seenGoalIds.add(goal.id);
+  }
+  if (!draft.noNonGoals && !draft.nonGoals.length) add(errors, 'nonGoals', 'REQUIRED', '제외 범위를 입력하거나 제외 범위 없음을 선택하세요.');
+  if (draft.hasUserFlow && !draft.userFlow.length) add(errors, 'userFlow', 'REQUIRED', '사용자 흐름을 사용하려면 한 단계 이상 입력하세요.');
   if (!draft.acceptanceCriteria.length) {
     add(errors, 'acceptanceCriteria', 'REQUIRED', '관찰 가능한 성공 기준을 하나 이상 정하세요.');
   }
@@ -130,6 +160,18 @@ export function validateDraft(input, context = {}) {
       add(errors, `contracts.${index}.name`, 'UNSAFE_PATH', '계약 파일명은 경로 없이 안전한 md, json, yaml 파일명이어야 합니다.');
     }
     if (!contract.content.trim()) add(errors, `contracts.${index}.content`, 'REQUIRED', '계약 내용을 입력하세요.');
+    if (contract.name.toLowerCase().endsWith('.json') && contract.content.trim()) {
+      try {
+        JSON.parse(contract.content);
+      } catch {
+        add(errors, `contracts.${index}.content`, 'INVALID_JSON', 'JSON 계약 파일의 문법이 올바르지 않습니다.');
+      }
+    }
+    const uniqueContractServices = new Set(contract.serviceIds);
+    if (uniqueContractServices.size < 2) add(errors, `contracts.${index}.serviceIds`, 'REQUIRED', '서로 다른 참여 서비스를 두 개 이상 선택하세요.');
+    for (const serviceId of uniqueContractServices) {
+      if (!draft.services.includes(serviceId)) add(errors, `contracts.${index}.serviceIds`, 'UNKNOWN_SERVICE', `계약 참여 서비스 ${serviceId}가 영향받는 서비스에 없습니다.`);
+    }
   }
   const contractNames = new Set();
   for (const [index, contract] of draft.contracts.entries()) {
@@ -138,12 +180,24 @@ export function validateDraft(input, context = {}) {
     contractNames.add(key);
   }
 
+  const serviceUnitCounts = new Map();
   const ids = new Set();
+  const goalIds = new Set(draft.goals.map(({ id }) => id));
+  const workUnitById = new Map(draft.workUnits.map((unit) => [unit.id, unit]));
+  const hasSameServicePredecessor = (unit, id, seen = new Set()) => {
+    if (seen.has(id)) return false;
+    seen.add(id);
+    const dependency = workUnitById.get(id);
+    if (!dependency) return false;
+    if (dependency.service === unit.service) return true;
+    return dependency.dependsOn.some((dependencyId) => hasSameServicePredecessor(unit, dependencyId, seen));
+  };
   for (const [index, unit] of draft.workUnits.entries()) {
     const prefix = `workUnits.${index}`;
     if (!ID_PATTERN.test(unit.id)) add(errors, `${prefix}.id`, 'INVALID_ID', '작업 ID 형식이 올바르지 않습니다.');
     if (ids.has(unit.id)) add(errors, `${prefix}.id`, 'DUPLICATE_ID', `작업 ID ${unit.id}가 중복됩니다.`);
     ids.add(unit.id);
+    if (!goalIds.has(unit.goalId)) add(errors, `${prefix}.goalId`, 'UNKNOWN_GOAL', '작업이 속할 목표를 선택하세요.');
     if (!services.has(unit.service)) add(errors, `${prefix}.service`, 'UNKNOWN_SERVICE', '등록된 대상 서비스를 선택하세요.');
     else if (!draft.services.includes(unit.service)) add(errors, `${prefix}.service`, 'SERVICE_NOT_SELECTED', `${unit.service}를 영향받는 서비스로 먼저 선택하세요.`);
     if (!unit.goal) add(errors, `${prefix}.goal`, 'REQUIRED', '작업 결과를 한 문장으로 입력하세요.');
@@ -151,6 +205,8 @@ export function validateDraft(input, context = {}) {
     else if (!ID_PATTERN.test(unit.writer)) add(errors, `${prefix}.writer`, 'INVALID_ID', '작업 담당자는 영문·숫자 식별자로 입력하세요.');
     if (!unit.writePaths.length) add(errors, `${prefix}.writePaths`, 'REQUIRED', '수정할 폴더나 파일을 하나 이상 지정하세요.');
     if (unit.writePaths.length > MAX_PATHS_PER_UNIT) add(errors, `${prefix}.writePaths`, 'LIMIT_EXCEEDED', `수정 범위는 작업당 최대 ${MAX_PATHS_PER_UNIT}개입니다.`);
+    const serviceUnitCount = (serviceUnitCounts.get(unit.service) ?? 0) + 1;
+    serviceUnitCounts.set(unit.service, serviceUnitCount);
     for (const [pathIndex, path] of unit.writePaths.entries()) {
       if (!pathIsSafe(path)) add(errors, `${prefix}.writePaths.${pathIndex}`, 'UNSAFE_PATH', '수정 범위는 저장소 내부의 상대 경로여야 합니다.');
       const unsupportedGlob = ['?', '[', ']', '{', '}'].some((character) => path.includes(character))
@@ -158,9 +214,11 @@ export function validateDraft(input, context = {}) {
       if (pathIsSafe(path) && unsupportedGlob) {
         add(errors, `${prefix}.writePaths.${pathIndex}`, 'UNSUPPORTED_SCOPE', '수정 범위는 정확한 파일 경로나 폴더/** 형식으로 입력하세요.');
       }
+      const followsSameServiceWork = unit.dependsOn.some((id) => hasSameServicePredecessor(unit, id));
+      if (path === '**' && (!services.get(unit.service)?.bootstrapEligible || serviceUnitCount > 1 || followsSameServiceWork)) {
+        add(errors, `${prefix}.writePaths.${pathIndex}`, 'FULL_SCOPE_NOT_ALLOWED', '전체 경로(**)는 신규 서비스의 첫 구현 작업에서만 사용할 수 있습니다. 구체적인 파일 또는 폴더를 지정하세요.');
+      }
     }
-    const inherited = services.get(unit.service)?.verify ?? [];
-    if (!unit.verify.length && !inherited.length) add(errors, `${prefix}.verify`, 'REQUIRED', '완료 확인 명령을 하나 이상 지정하세요.');
   }
   for (const serviceId of draft.workUnits.length ? draft.services : []) {
     if (!draft.workUnits.some((unit) => unit.service === serviceId)) {
@@ -177,7 +235,7 @@ export function validateDraft(input, context = {}) {
 
   const visiting = new Set();
   const visited = new Set();
-  const byId = new Map(draft.workUnits.map((unit) => [unit.id, unit]));
+  const byId = workUnitById;
   const visit = (id) => {
     if (visiting.has(id)) {
       add(errors, 'workUnits', 'DEPENDENCY_CYCLE', `작업 의존 관계가 ${id}에서 순환합니다.`);
@@ -209,7 +267,11 @@ function yaml(value) {
 }
 
 function planMarkdown(draft, rootHead) {
-  return `# ${draft.changeId} — ${draft.title}\n\n## State\n\n- Status: DRAFT\n- Coordinator: ${draft.coordinator}\n- Required approvers: product owner, service owner, independent reviewer\n- Plan base: ${rootHead}\n- Tracking: none\n\n## Goal\n\n${draft.goal}\n\n## Non-goals\n\n${draft.nonGoals.map((item) => `- ${item}`).join('\n')}\n\n## User flow\n\n${draft.userFlow.map((item, index) => `${index + 1}. ${item}`).join('\n')}\n\n## Acceptance criteria\n\n${draft.acceptanceCriteria.map((item, index) => `- [AC-${String(index + 1).padStart(3, '0')}] ${item}`).join('\n')}\n\n## Contracts\n\n- Shared snapshots: ${draft.noSharedContract ? 'none' : draft.contracts.map(({ name }) => `\`contracts/${name}\``).join(', ')}\n- Compatibility/migration: none unless explicitly stated in a contract snapshot\n\n## Order\n\n- Merge order: dependency order recorded in WORK_UNITS.yaml\n- Deploy order: decided during Candidate integration\n- Activation: none unless added by an approved plan amendment\n\n## Risks\n\n- Concurrent path ownership or contract ambiguity blocks approval readiness.\n\n## Rollback\n\n| Item | Plan |\n|---|---|\n| Trigger | An acceptance criterion or approved contract cannot be satisfied |\n| Owner | Coordinator and affected service owner |\n| Kill switch | Defined before deployment when applicable |\n| Code recovery | Revert or roll forward from exact merge SHAs |\n| Data recovery | Not applicable unless added by an approved plan amendment |\n| Verification | Re-run all declared checks and Candidate verification |\n\n## Stop conditions\n\n- A contract, scope, base SHA, dependency, or required verification must change.\n- Secret, production, destructive, or undeclared repository access is required.\n`;
+  const goalLines = draft.goals.map((goal) => `### ${goal.id} — ${goal.title}\n\n${goal.outcome}`).join('\n\n');
+  const nonGoals = draft.noNonGoals ? '- None declared for this Change.' : draft.nonGoals.map((item) => `- ${item}`).join('\n');
+  const userFlow = draft.hasUserFlow ? `\n\n## User flow\n\n${draft.userFlow.map((item, index) => `${index + 1}. ${item}`).join('\n')}` : '';
+  const contractSummary = draft.noSharedContract ? 'none' : draft.contracts.map(({ name, serviceIds }) => `\`contracts/${name}\` (${serviceIds.join(' ↔ ')})`).join(', ');
+  return `# ${draft.changeId} — ${draft.title}\n\n## State\n\n- Status: DRAFT\n- Coordinator: ${draft.coordinator}\n- Required approvers: product owner, service owner, independent reviewer\n- Plan base: ${rootHead}\n- Tracking: none\n\n## Goals\n\n${goalLines}\n\n## Non-goals\n\n${nonGoals}${userFlow}\n\n## Acceptance criteria\n\n${draft.acceptanceCriteria.map((item, index) => `- [AC-${String(index + 1).padStart(3, '0')}] ${item}`).join('\n')}\n\n## Contracts\n\n- Shared snapshots: ${contractSummary}\n- Compatibility/migration: none unless explicitly stated in a contract snapshot\n\n## Order\n\n- Merge order: dependency order recorded in WORK_UNITS.yaml\n- Deploy order: decided during Candidate integration\n- Activation: none unless added by an approved plan amendment\n\n## Risks\n\n- Concurrent path ownership or contract ambiguity blocks approval readiness.\n\n## Rollback\n\n| Item | Plan |\n|---|---|\n| Trigger | An acceptance criterion or approved contract cannot be satisfied |\n| Owner | Coordinator and affected service owner |\n| Kill switch | Defined before deployment when applicable |\n| Code recovery | Revert or roll forward from exact merge SHAs |\n| Data recovery | Not applicable unless added by an approved plan amendment |\n| Verification | Re-run all declared checks and Candidate verification |\n\n## Stop conditions\n\n- A contract, scope, base SHA, dependency, or required verification must change.\n- Secret, production, destructive, or undeclared repository access is required.\n`;
 }
 
 export function buildChangeFiles(input, context) {
@@ -219,8 +281,10 @@ export function buildChangeFiles(input, context) {
   const serviceById = new Map(context.services.map((service) => [service.id, service]));
   const implementationUnits = draft.workUnits.map((unit) => {
     const service = serviceById.get(unit.service);
+    const verification = unit.verify.length ? unit.verify : list(service.verify);
     return {
       id: unit.id,
+      goal_id: unit.goalId,
       repo: unit.service,
       state: 'draft',
       goal: unit.goal,
@@ -229,7 +293,7 @@ export function buildChangeFiles(input, context) {
       writer: unit.writer,
       write_paths: unit.writePaths,
       depends_on: ['contract-and-plan', ...unit.dependsOn.filter((id) => id !== 'contract-and-plan')],
-      verify: unit.verify.length ? unit.verify : service.verify,
+      verify: verification,
     };
   });
   const serviceIds = [...new Set(draft.workUnits.map((unit) => unit.service))];
@@ -238,7 +302,7 @@ export function buildChangeFiles(input, context) {
   files.set('WORK_UNITS.yaml', yaml({
     schema_version: 1,
     change_id: draft.changeId,
-    state: 'approved',
+    state: 'draft',
     plan_base_sha: rootHead,
     plan_merge_sha: 'pending',
     work_units: [
@@ -249,7 +313,10 @@ export function buildChangeFiles(input, context) {
         write_paths: [`changes/${draft.changeId}/**`], depends_on: [],
         verify: ['npm test', `npm run verify:registry -- --change ${draft.changeId} --strict`],
       },
-      ...implementationUnits.map((unit) => ({ ...unit, state: 'ready' })),
+      ...implementationUnits.map((unit) => ({
+        ...unit,
+        state: unit.verify.length && unit.depends_on.every((id) => id === 'contract-and-plan') ? 'ready' : 'draft',
+      })),
       {
         id: 'candidate-integration', repo: 'root', state: 'draft',
         goal: 'Pin reviewed service merge SHAs and verify the exact candidate.',
@@ -272,8 +339,9 @@ export function buildChangeFiles(input, context) {
       { key: 'root-candidate', repo: 'root', work_unit: 'candidate-integration', number: null, state: 'not-started', base_sha: 'pending-plan-merge', head_sha: null, merge_sha: null },
     ],
   }));
-  const unitRows = implementationUnits.map((unit) => `| \`${unit.id}\` | \`${unit.repo}\` | draft | Approved planning merge SHA |`).join('\n');
-  files.set('STATUS.md', `# Status — ${draft.changeId}\n\n**State:** DRAFT\n\n## Scope\n\n${draft.goal} Non-goals: ${draft.nonGoals.join(' ')}\n\n## Work units\n\n| Work unit | Repository | State | Gate |\n|---|---|---|---|\n| \`contract-and-plan\` | Root | draft | Human plan and contract approval |\n${unitRows}\n| \`candidate-integration\` | Root | draft | Service PRs reviewed and human-merged |\n\n## Evidence boundary\n\n- Root base SHA: \`${rootHead}\`\n- Service base SHAs: see \`WORK_UNITS.yaml\`\n- No implementation has started.\n- No implementation agent has been dispatched.\n- No candidate, release, or deployment claim exists yet.\n\n## Next gate\n\nA human reviews and approves the Root planning PR. Its merge SHA becomes the immutable plan version supplied to participating Writers.\n`);
+  const unitRows = implementationUnits.map((unit) => `| \`${unit.id}\` | \`${unit.goal_id}\` | \`${unit.repo}\` | draft | Approved planning merge SHA |`).join('\n');
+  const scopeSummary = draft.goals.map(({ id, title, outcome }) => `${id} ${title}: ${outcome}`).join(' ');
+  files.set('STATUS.md', `# Status — ${draft.changeId}\n\n**State:** DRAFT\n\n## Scope\n\n${scopeSummary} Non-goals: ${draft.noNonGoals ? 'none' : draft.nonGoals.join(' ')}\n\n## Work units\n\n| Work unit | Goal | Repository | State | Gate |\n|---|---|---|---|---|\n| \`contract-and-plan\` | all | Root | draft | Human plan and contract approval |\n${unitRows}\n| \`candidate-integration\` | all | Root | draft | Service PRs reviewed and human-merged |\n\n## Evidence boundary\n\n- Root base SHA: \`${rootHead}\`\n- Service base SHAs: see \`WORK_UNITS.yaml\`\n- No implementation has started.\n- No implementation agent has been dispatched.\n- No candidate, release, or deployment claim exists yet.\n\n## Next gate\n\nA human reviews and approves the Root planning PR. Its merge SHA becomes the immutable plan version supplied to participating Writers.\n`);
   files.set('releases/candidate-001.yaml', yaml({
     schema_version: 1, change_id: draft.changeId, candidate: 1, state: 'draft', plan_sha: 'pending-planning-merge',
     services: serviceIds.map((id) => {

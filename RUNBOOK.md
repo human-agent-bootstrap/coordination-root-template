@@ -42,10 +42,8 @@ npm run init -- --name <root-name> --org <org> \
   --coordinator-owner @<org>/<team> --apply
 
 npm run service:add -- \
-  --id <service-id> \
   --repo https://github.com/<org>/<service-repo>.git \
-  --owners @<org>/<team> \
-  --verify "<test-command>,<build-or-lint-command>" \
+  --stack <detected-stack> \
   --apply
 
 npm run verify:registry
@@ -57,6 +55,9 @@ git commit -m "chore: register <service-id>"
 `npm run verify:candidate -- --detect`, `git submodule status`가 정상 종료되어야 한다.
 `change:create`는 현재 checkout이 아니라 이 Root commit의 submodule gitlink를
 `base_sha`로 사용하므로, 서비스 등록을 먼저 commit해야 한다.
+`service:add`는 저장소 이름을 서비스 ID로 사용하고 URL의 조직 또는 사용자를 기본 owner로
+기록한다. `--apply`를 빼고 먼저 dry run으로 확인한다. 서비스 등록 시 `--verify`는 생략할 수
+있지만, 실행 상태로 전환할 Work Unit에는 검증 명령을 반드시 선언해야 한다.
 
 ### 네트워크와 자격 증명
 

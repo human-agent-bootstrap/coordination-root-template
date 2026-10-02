@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -878,6 +878,72 @@ services: []
     ], dir);
     assert.equal(accepted.status, 0, accepted.stderr);
     assert.match(accepted.stdout, /DRY RUN/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('service:add derives the id and owner from the repository URL and permits omitted verify commands', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'coord-v2-service-derived-'));
+  try {
+    mkdirSync(join(dir, 'services'), { recursive: true });
+    writeFileSync(join(dir, 'services/registry.yaml'), `version: 2
+github:
+  host: github.com
+  api_base: https://api.github.com
+services: []
+`);
+    const result = run('service-add.mjs', [
+      '--repo', 'https://github.com/acme/payments-api.git',
+      '--stack', 'node',
+    ], dir);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /services\/payments-api/);
+    assert.match(result.stdout, /id: payments-api/);
+    assert.match(result.stdout, /"@acme"/);
+    assert.match(result.stdout, /verify: \[\]/);
+    assert.match(result.stdout, /Nothing is written without --apply/);
+    assert.equal(existsSync(join(dir, 'services/payments-api')), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('registry v2 permits an empty service verify list until a Work Unit is activated', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'coord-v2-empty-verify-'));
+  try {
+    mkdirSync(join(dir, 'services/api'), { recursive: true });
+    writeFileSync(join(dir, 'services/registry.yaml'), `version: 2
+github:
+  host: github.com
+services:
+  - id: api
+    path: services/api
+    repo: https://github.com/acme/api.git
+    owners: ["@acme"]
+    verify: []
+`);
+    writeFileSync(join(dir, '.gitmodules'), `[submodule "services/api"]
+  path = services/api
+  url = https://github.com/acme/api.git
+`);
+    mkdirSync(join(dir, 'changes/CHG-DRAFT-001'), { recursive: true });
+    writeFileSync(join(dir, 'changes/CHG-DRAFT-001/WORK_UNITS.yaml'), `schema_version: 1
+change_id: CHG-DRAFT-001
+state: draft
+work_units:
+  - id: api-bootstrap
+    repo: api
+    state: draft
+    branch: feat/CHG-DRAFT-001/api-bootstrap
+    base_sha: pending
+    writer: unassigned
+    write_paths: []
+    depends_on: []
+    verify: []
+`);
+    const result = run('verify-registry.mjs', ['--strict', '--allow-uninitialized'], dir);
+    assert.equal(result.status, 0, result.stderr);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

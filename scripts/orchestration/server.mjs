@@ -19,8 +19,19 @@ import { buildChangeFiles, normalizeDraft, saveChange, validateDraft } from './c
 const moduleRoot = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const BODY_LIMIT = 1024 * 1024;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const STACK_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9+_.-]{0,63}$/;
 const FULL_SHA = /^[0-9a-f]{40}$/i;
 const SHA256 = /^[0-9a-f]{64}$/i;
+const STACK_MARKERS = [
+  ['package.json', 'node'],
+  ['pyproject.toml', 'python'],
+  ['requirements.txt', 'python'],
+  ['Cargo.toml', 'rust'],
+  ['go.mod', 'go'],
+  ['pom.xml', 'java-maven'],
+  ['build.gradle', 'java-gradle'],
+  ['build.gradle.kts', 'kotlin-gradle'],
+];
 
 function git(root, args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -34,6 +45,80 @@ function registryAt(root) {
   return { ...registry, services };
 }
 
+function serviceInput(root, repo) {
+  let parsed;
+  try {
+    parsed = new URL(String(repo ?? '').trim());
+  } catch {
+    throw new Error('올바른 GitHub HTTPS URL을 입력하세요.');
+  }
+  const registry = registryAt(root);
+  if (parsed.protocol !== 'https:' || parsed.hostname !== registry.github?.host || parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash) {
+    throw new Error(`서비스 저장소는 ${registry.github?.host || '설정된 GitHub 호스트'}의 HTTPS URL이어야 합니다.`);
+  }
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  if (parts.length !== 2) throw new Error('GitHub 저장소 URL은 조직/저장소 형식이어야 합니다.');
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(parts[0])) throw new Error('GitHub 조직 또는 사용자 이름 형식이 올바르지 않습니다.');
+  const id = parts[1].replace(/\.git$/i, '');
+  if (!IDENTIFIER.test(id)) throw new Error('저장소 이름은 서비스 ID로 사용할 수 없는 형식입니다.');
+  return {
+    repo: parsed.toString().replace(/\/$/, ''),
+    id,
+    path: `services/${id}`,
+    owners: [`@${parts[0]}`],
+  };
+}
+
+function serviceAdd(root, service, { apply = false } = {}) {
+  const commandArgs = ['--repo', service.repo, '--stack', service.stack];
+  const packagePath = join(root, 'package.json');
+  const hasServiceAddScript = existsSync(packagePath)
+    && Boolean(JSON.parse(readFileSync(packagePath, 'utf8')).scripts?.['service:add']);
+  const command = hasServiceAddScript ? (process.platform === 'win32' ? 'npm.cmd' : 'npm') : process.execPath;
+  const args = hasServiceAddScript
+    ? ['run', 'service:add', '--', ...commandArgs]
+    : [join(moduleRoot, 'scripts/service-add.mjs'), ...commandArgs];
+  if (apply) args.push('--apply');
+  const result = spawnSync(command, args, { cwd: root, encoding: 'utf8' });
+  if (result.status !== 0) throw new Error((result.stderr || result.stdout || '서비스 등록 확인에 실패했습니다.').trim());
+  return { output: result.stdout.trim(), exitCode: result.status ?? 0 };
+}
+
+function detectStack(root, service) {
+  const directory = mkdtempSync(join(tmpdir(), 'orchestration-service-'));
+  try {
+    const result = spawnSync('git', ['clone', '--depth', '1', '--no-checkout', '--filter=blob:none', service.repo, directory], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    if (result.status !== 0) return { stack: 'unspecified', detected: false, marker: null };
+    const tree = spawnSync('git', ['ls-tree', '-r', '--name-only', 'HEAD'], { cwd: directory, encoding: 'utf8' });
+    if (tree.status !== 0) return { stack: 'unspecified', detected: false, marker: null };
+    const names = new Set(tree.stdout.split('\n').map((path) => path.split('/').at(-1)));
+    const marker = STACK_MARKERS.find(([file]) => names.has(file));
+    return { stack: marker?.[1] ?? 'unspecified', detected: Boolean(marker), marker: marker?.[0] ?? null };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function previewService(root, input) {
+  const service = serviceInput(root, input?.repo);
+  const candidate = { ...service, ...detectStack(root, service) };
+  return { service: candidate, dryRun: serviceAdd(root, candidate) };
+}
+
+function registerService(root, input) {
+  const service = serviceInput(root, input?.repo);
+  const stack = String(input?.stack ?? '').trim();
+  if (!STACK_IDENTIFIER.test(stack)) throw new Error('기술 스택은 영문, 숫자, +, _, ., -만 사용해 입력하세요.');
+  const candidate = { ...service, stack };
+  serviceAdd(root, candidate);
+  const applied = serviceAdd(root, candidate, { apply: true });
+  return { service: repositoryContext(root).services.find(({ id }) => id === candidate.id), applied };
+}
+
 function serviceBase(root, service, registryVersion) {
   try {
     const row = git(root, ['ls-tree', 'HEAD', '--', service.path]);
@@ -42,6 +127,13 @@ function serviceBase(root, service, registryVersion) {
   } catch {
     // Fall back to the initialized service checkout for registry-v1 fixtures.
   }
+  try {
+    const row = git(root, ['ls-files', '--stage', '--', service.path]);
+    const gitlink = row.match(/^160000 ([0-9a-f]{40}) 0\t/)?.[1];
+    if (gitlink) return null;
+  } catch {
+    // A service that is neither committed nor staged is invalid for registry v2.
+  }
   if (registryVersion >= 2) {
     throw new Error(`서비스 ${service.id}의 등록 커밋을 Root gitlink에서 찾을 수 없습니다.`);
   }
@@ -49,6 +141,20 @@ function serviceBase(root, service, registryVersion) {
     return git(join(root, service.path), ['rev-parse', 'HEAD']);
   } catch {
     return null;
+  }
+}
+
+function bootstrapEligible(root, service, baseSha) {
+  if (!baseSha) return false;
+  try {
+    const files = git(join(root, service.path), ['ls-tree', '-r', '--name-only', baseSha])
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const anchorFiles = new Set(['README', 'README.md', '.gitignore', 'LICENSE', 'LICENSE.md']);
+    return files.length > 0 && files.every((file) => anchorFiles.has(file));
+  } catch {
+    return false;
   }
 }
 
@@ -77,10 +183,10 @@ export function repositoryContext(root) {
     branch,
     dirty,
     changes,
-    services: registry.services.map((service) => ({
-      ...service,
-      baseSha: serviceBase(root, service, registry.version ?? 1),
-    })),
+    services: registry.services.map((service) => {
+      const baseSha = serviceBase(root, service, registry.version ?? 1);
+      return { ...service, baseSha, bootstrapEligible: bootstrapEligible(root, service, baseSha) };
+    }),
   };
 }
 
@@ -334,6 +440,12 @@ export function createOrchestrationServer({ root = process.cwd(), uiRoot = join(
       const url = new URL(request.url, 'http://127.0.0.1');
       if (request.method === 'GET' && url.pathname === '/api/status') {
         return json(response, 200, repositoryContext(resolvedRoot));
+      }
+      if (request.method === 'POST' && url.pathname === '/api/services/preview') {
+        return json(response, 200, previewService(resolvedRoot, await readJson(request)));
+      }
+      if (request.method === 'POST' && url.pathname === '/api/services') {
+        return json(response, 201, registerService(resolvedRoot, await readJson(request)));
       }
       if (request.method === 'POST' && url.pathname === '/api/changes/preview') {
         const draft = await readJson(request);

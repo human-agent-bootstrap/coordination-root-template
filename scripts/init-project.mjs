@@ -109,7 +109,7 @@ try {
       writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
     }
     process.stdout.write(`APPLIED: initialized ${name}\n`);
-    process.stdout.write('Next: npm run service:add -- --id <id> --repo <url> --apply, then npm run change:create.\n');
+    process.stdout.write('Next: npm run service:add -- --repo <https-url> --apply, then npm run change:create.\n');
   }
 } catch (error) {
   fail(error.message);

@@ -1,28 +1,19 @@
 version: 2
 github:
-  host: <GITHUB-HOST>
-  api_base: <GITHUB-API-BASE>
+  host: github.com
+  api_base: https://api.github.com
 services:
   - id: todo-collab-front
     path: services/todo-collab-front
-    repo: https://github.com/human-agent-bootstrap/todo-collab-front
-    stack: react-typescript
+    repo: https://github.com/human-agent-bootstrap/todo-collab-front.git
+    stack: node
     owners:
-      - "@frontend-team"
-    verify:
-      - npm ci
-      - npm test -- --run
-      - npm run lint
-      - npm run typecheck
-      - npm run build
-
+      - "@human-agent-bootstrap"
+    verify: []
   - id: todo-collab-back
     path: services/todo-collab-back
-    repo: https://github.com/human-agent-bootstrap/todo-collab-back
-    stack: python-fastapi
+    repo: https://github.com/human-agent-bootstrap/todo-collab-back.git
+    stack: python
     owners:
-      - "@backend-team"
-    verify:
-      - uv run python -m pytest
-      - uv run python -m ruff check .
-      - uv run python -m mypy app
+      - "@human-agent-bootstrap"
+    verify: []

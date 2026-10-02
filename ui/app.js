@@ -8,8 +8,17 @@ const state = {
 
 const form = document.querySelector('#meeting-form');
 const message = document.querySelector('#message');
+const goals = document.querySelector('#goals');
+const goalTemplate = document.querySelector('#goal-template');
 const workUnits = document.querySelector('#work-units');
 const unitTemplate = document.querySelector('#unit-template');
+const contracts = document.querySelector('#contracts');
+const contractTemplate = document.querySelector('#contract-template');
+const serviceDialog = document.querySelector('#service-dialog');
+const serviceForm = document.querySelector('#service-form');
+let unitPanelSequence = 0;
+let contractPanelSequence = 0;
+let servicePreviewVersion = 0;
 
 function lines(value) {
   return String(value ?? '').split('\n').map((line) => line.trim()).filter(Boolean);
@@ -27,20 +36,89 @@ function clearMessage() {
   message.textContent = '';
 }
 
-function showStep(index) {
-  state.step = Number(index);
+function fieldValue(name) {
+  return String(form.elements[name]?.value ?? '').trim();
+}
+
+function setFieldInvalid(control, invalid) {
+  control?.setAttribute('aria-invalid', String(invalid));
+  return !invalid;
+}
+
+function validateStep(index) {
+  const invalid = [];
+  const requireText = (control) => {
+    if (!control || !String(control.value).trim()) invalid.push(control);
+  };
+
+  if (index === 0) {
+    ['changeId', 'title', 'coordinator'].forEach((name) => requireText(form.elements[name]));
+    if (!goals.querySelector('.goal-card')) invalid.push(document.querySelector('#add-goal'));
+    goals.querySelectorAll('.goal-card').forEach((card) => {
+      requireText(card.querySelector('[data-goal="title"]'));
+      requireText(card.querySelector('[data-goal="outcome"]'));
+    });
+  }
+  if (index === 1) {
+    if (!form.elements.noNonGoals.checked) requireText(form.elements.nonGoals);
+    if (form.elements.hasUserFlow.checked) requireText(form.elements.userFlow);
+    requireText(form.elements.acceptanceCriteria);
+    if (!selectedServices().length) invalid.push(document.querySelector('#service-list input') || document.querySelector('#service-list'));
+  }
+  if (index === 2) {
+    if (!workUnits.querySelector('.unit-card')) invalid.push(document.querySelector('#add-unit'));
+    workUnits.querySelectorAll('.unit-card').forEach((card) => {
+      ['goalId', 'service', 'goal', 'writer'].forEach((name) => requireText(card.querySelector(`[data-unit="${name}"]`)));
+      const paths = [...card.querySelectorAll('[data-path]')];
+      if (!paths.length || paths.every((input) => !input.value.trim())) invalid.push(card.querySelector('.add-path'));
+    });
+  }
+  if (index === 3 && !form.elements.noSharedContract.checked) {
+    if (!contracts.querySelector('.contract-card')) invalid.push(document.querySelector('#add-contract'));
+    contracts.querySelectorAll('.contract-card').forEach((card) => {
+      requireText(card.querySelector('[data-contract="name"]'));
+      requireText(card.querySelector('[data-contract="content"]'));
+      if (card.querySelectorAll('[data-contract-service]:checked').length < 2) invalid.push(card.querySelector('[data-contract-service]') || card);
+    });
+  }
+
+  form.querySelectorAll('[aria-invalid="true"]').forEach((control) => control.setAttribute('aria-invalid', 'false'));
+  invalid.forEach((control) => control?.setAttribute?.('aria-invalid', 'true'));
+  return invalid;
+}
+
+function refreshStepAvailability() {
+  document.querySelectorAll('[data-step-target]').forEach((button) => {
+    const target = Number(button.dataset.stepTarget);
+    button.disabled = target > state.step + 1;
+  });
+}
+
+function showStep(index, { force = false } = {}) {
+  const target = Number(index);
+  if (!force && target > state.step) {
+    const invalid = validateStep(state.step);
+    if (invalid.length) {
+      showMessage('필수 항목을 확인해 주세요. 표시된 내용을 완성하면 다음 단계로 이동할 수 있습니다.');
+      invalid[0]?.focus?.();
+      return false;
+    }
+  }
+  state.step = target;
   document.querySelectorAll('.step-panel').forEach((panel) => {
     panel.hidden = Number(panel.dataset.step) !== state.step;
   });
   document.querySelectorAll('[data-step-target]').forEach((button) => {
-    const target = Number(button.dataset.stepTarget);
-    if (target === state.step) button.setAttribute('aria-current', 'step');
+    const step = Number(button.dataset.stepTarget);
+    if (step === state.step) button.setAttribute('aria-current', 'step');
     else button.removeAttribute('aria-current');
-    button.classList.toggle('complete', target < state.step);
+    button.classList.toggle('complete', step < state.step);
   });
+  refreshStepAvailability();
   clearMessage();
   document.querySelector(`[data-step="${state.step}"] h2`)?.focus?.();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  return true;
 }
 
 async function request(url, options) {
@@ -56,60 +134,435 @@ async function request(url, options) {
 
 async function loadStatus() {
   state.status = await request('/api/status');
-  const dirtyText = state.status.dirty ? ' · Git 변경 있음' : ' · Git 상태 깨끗함';
-  const statusNode = document.querySelector('#repo-status');
-  const branch = document.createElement('span');
-  branch.textContent = state.status.branch;
-  statusNode.replaceChildren(branch, document.createTextNode(` · ${state.status.head.slice(0, 8)}${dirtyText}`));
-  const changeList = document.querySelector('#change-list');
-  changeList.replaceChildren(...(state.status.changes.length
-    ? state.status.changes.map((id) => {
-      const item = document.createElement('span');
-      item.textContent = id;
-      return item;
-    })
-    : [document.createTextNode('아직 만든 계획이 없습니다.')]
-  ));
-  const serviceList = document.querySelector('#service-list');
-  if (!state.status.services.length) {
-    serviceList.innerHTML = '<span class="help">등록된 서비스가 없습니다. 먼저 기존 CLI에서 서비스를 등록해 주세요.</span>';
-    return;
-  }
-  serviceList.replaceChildren(...state.status.services.map((service) => {
-    const label = document.createElement('label');
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.name = 'services';
-    input.value = service.id;
-    input.setAttribute('aria-label', service.id);
-    label.append(input, document.createTextNode(`${service.id} · ${service.stack || '기술 스택 미지정'}`));
-    return label;
-  }));
+  renderServiceChoices();
+  document.querySelectorAll('.unit-card').forEach(refreshUnitServices);
+  document.querySelectorAll('.contract-card').forEach(renderContractServices);
 }
 
 function selectedServices() {
   return [...form.querySelectorAll('[name="services"]:checked')].map(({ value }) => value);
 }
 
+function renderServiceChoices() {
+  const serviceList = document.querySelector('#service-list');
+  const serviceHelp = document.querySelector('#service-help');
+  if (!state.status?.services.length) {
+    serviceHelp.textContent = '등록된 서비스가 없습니다. GitHub 저장소를 먼저 등록해 주세요.';
+    serviceList.replaceChildren();
+    return;
+  }
+  serviceHelp.textContent = '이번 계획에서 수정하거나 계약으로 연결할 서비스를 선택하세요.';
+  const selected = new Set(selectedServices());
+  serviceList.replaceChildren(...state.status.services.map((service) => {
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.name = 'services';
+    input.value = service.id;
+    input.checked = selected.has(service.id);
+    input.setAttribute('aria-label', service.id);
+    const copy = document.createElement('span');
+    const name = document.createElement('strong');
+    name.textContent = service.id;
+    const path = document.createElement('small');
+    path.textContent = service.path;
+    copy.append(name, path);
+    label.append(input, copy);
+    return label;
+  }));
+}
+
+function resetServiceRegistration() {
+  servicePreviewVersion += 1;
+  serviceForm.reset();
+  delete serviceForm.dataset.previewRepo;
+  serviceForm.elements.serviceStack.disabled = true;
+  document.querySelector('#service-preview').disabled = true;
+  document.querySelector('#service-refresh').disabled = true;
+  document.querySelector('#service-register').disabled = true;
+  const status = document.createElement('span');
+  status.textContent = 'GitHub URL을 입력하면 등록 전 확인을 실행할 수 있습니다.';
+  document.querySelector('#service-preview-result').replaceChildren(status);
+}
+
+function renderServicePreview(service, dryRun) {
+  const container = document.querySelector('#service-preview-result');
+  const rows = [
+    ['서비스 ID', service.id],
+    ['등록 경로', service.path],
+    ['기술 스택', service.detected ? `${service.stack} · ${service.marker} 감지` : '자동 감지 실패 · 직접 입력 필요'],
+    ['검증 명령', '등록 시 생략 가능 · 비우면 Work Unit은 초안'],
+  ];
+  container.replaceChildren(...rows.map(([label, value]) => {
+    const row = document.createElement('div');
+    const term = document.createElement('strong');
+    const detail = document.createElement('span');
+    term.textContent = label;
+    detail.textContent = value;
+    row.append(term, detail);
+    return row;
+  }));
+  const result = document.createElement('small');
+  result.textContent = `등록 전 확인 통과 · 종료 코드 ${dryRun.exitCode}`;
+  container.append(result);
+}
+
+async function previewServiceRegistration() {
+  const previewButton = document.querySelector('#service-preview');
+  const registerButton = document.querySelector('#service-register');
+  const repo = String(serviceForm.elements.serviceRepo.value ?? '').trim();
+  const requestVersion = ++servicePreviewVersion;
+  previewButton.disabled = true;
+  previewButton.setAttribute('aria-busy', 'true');
+  registerButton.disabled = true;
+  try {
+    const result = await request('/api/services/preview', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ repo }),
+    });
+    if (requestVersion !== servicePreviewVersion || serviceForm.elements.serviceRepo.value.trim() !== repo || !serviceDialog.open) return;
+    renderServicePreview(result.service, result.dryRun);
+    serviceForm.elements.serviceStack.disabled = false;
+    serviceForm.elements.serviceStack.value = result.service.stack === 'unspecified' ? '' : result.service.stack;
+    serviceForm.elements.serviceRepo.value = result.service.repo;
+    serviceForm.dataset.previewRepo = result.service.repo;
+    document.querySelector('#service-refresh').disabled = false;
+    registerButton.disabled = !serviceForm.elements.serviceStack.value.trim();
+  } catch (error) {
+    if (requestVersion !== servicePreviewVersion) return;
+    document.querySelector('#service-preview-result').textContent = error.message;
+    serviceForm.elements.serviceStack.disabled = true;
+  } finally {
+    if (requestVersion === servicePreviewVersion) {
+      previewButton.disabled = false;
+      previewButton.removeAttribute('aria-busy');
+    }
+  }
+}
+
+async function registerService() {
+  const button = document.querySelector('#service-register');
+  const repo = String(serviceForm.elements.serviceRepo.value ?? '').trim();
+  const stack = String(serviceForm.elements.serviceStack.value ?? '').trim();
+  if (repo !== serviceForm.dataset.previewRepo) {
+    document.querySelector('#service-preview-result').textContent = 'URL이 변경되었습니다. 등록 전 확인을 다시 실행하세요.';
+    button.disabled = true;
+    return;
+  }
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    const result = await request('/api/services', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ repo, stack }),
+    });
+    await loadStatus();
+    const input = form.querySelector(`[name="services"][value="${CSS.escape(result.service.id)}"]`);
+    if (input) {
+      input.checked = true;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    serviceDialog.close();
+    showMessage(`${result.service.id} 서비스를 등록하고 선택했습니다.`, 'success');
+  } catch (error) {
+    document.querySelector('#service-preview-result').textContent = error.message;
+  } finally {
+    button.removeAttribute('aria-busy');
+  }
+}
+
+function goalOptions() {
+  return [...goals.querySelectorAll('.goal-card')].map((card, index) => ({
+    id: card.dataset.goalId,
+    title: card.querySelector('[data-goal="title"]').value.trim() || `목표 ${index + 1}`,
+  }));
+}
+
+function refreshGoalIndexes() {
+  goals.querySelectorAll('.goal-card').forEach((card, index) => {
+    const id = card.dataset.goalId;
+    card.querySelector('[data-goal-id]').textContent = id;
+    card.querySelector('[data-goal-heading]').textContent = card.querySelector('[data-goal="title"]').value.trim() || `목표 ${index + 1}`;
+    card.querySelector('.remove').setAttribute('aria-label', `${id} 삭제`);
+  });
+  document.querySelectorAll('.unit-card').forEach(refreshUnitGoals);
+}
+
+function addGoal() {
+  const card = goalTemplate.content.firstElementChild.cloneNode(true);
+  const used = new Set(goalOptions().map(({ id }) => id));
+  let sequence = 1;
+  while (used.has(`GOAL-${String(sequence).padStart(3, '0')}`)) sequence += 1;
+  card.dataset.goalId = `GOAL-${String(sequence).padStart(3, '0')}`;
+  card.querySelector('.remove').addEventListener('click', () => {
+    if (goals.querySelectorAll('.goal-card').length === 1) {
+      showMessage('계획에는 목표가 하나 이상 필요합니다.');
+      return;
+    }
+    const linked = [...workUnits.querySelectorAll('[data-unit="goalId"]')].some(({ value }) => value === card.dataset.goalId);
+    if (linked) {
+      showMessage('이 목표에 연결된 작업이 있습니다. 작업을 다른 목표로 옮긴 뒤 삭제하세요.');
+      return;
+    }
+    card.remove();
+    refreshGoalIndexes();
+    invalidatePreview();
+  });
+  card.querySelector('[data-goal="title"]').addEventListener('input', refreshGoalIndexes);
+  goals.append(card);
+  refreshGoalIndexes();
+  if (goals.children.length > 1) card.querySelector('[data-goal="title"]').focus();
+  invalidatePreview();
+}
+
 function refreshUnitServices(card) {
   const select = card.querySelector('[data-unit="service"]');
   const current = select.value;
-  select.replaceChildren(...selectedServices().map((id) => new Option(id, id)));
+  const services = selectedServices();
+  select.replaceChildren(new Option('서비스 선택', ''), ...services.map((id) => new Option(id, id)));
+  if ([...select.options].some(({ value }) => value === current)) select.value = current;
+  else if (services.length === 1) select.value = services[0];
+  updateUnitIdentity(card);
+}
+
+function refreshUnitGoals(card) {
+  const select = card.querySelector('[data-unit="goalId"]');
+  const current = select.value;
+  select.replaceChildren(new Option('목표 선택', ''), ...goalOptions().map(({ id, title }) => new Option(`${id} · ${title}`, id)));
   if ([...select.options].some(({ value }) => value === current)) select.value = current;
 }
 
+function suggestedUnitId(card) {
+  const existing = card.dataset.unitId;
+  if (existing) return existing;
+  const service = card.querySelector('[data-unit="service"]').value;
+  if (!service) return '자동 생성';
+  const used = new Set([...workUnits.querySelectorAll('.unit-card')].filter((candidate) => candidate !== card).map((candidate) => candidate.dataset.unitId).filter(Boolean));
+  let sequence = 1;
+  let id = service;
+  while (used.has(id)) {
+    sequence += 1;
+    const suffix = `-${sequence}`;
+    id = `${service.slice(0, 128 - suffix.length)}${suffix}`;
+  }
+  card.dataset.unitId = id;
+  return id;
+}
+
+function updateUnitIdentity(card) {
+  const id = suggestedUnitId(card);
+  card.querySelector('[data-unit-id]').textContent = id;
+  card.querySelector('[data-unit-heading]').textContent = card.querySelector('[data-unit="goal"]').value.trim() || '새 작업';
+  card.querySelector('.remove').setAttribute('aria-label', `${id} 작업 삭제`);
+  const service = card.querySelector('[data-unit="service"]').value;
+  const writer = card.querySelector('[data-unit="writer"]').value.trim();
+  card.querySelector('[data-unit-summary]').textContent = [service || '서비스 미지정', writer ? `담당 ${writer}` : '담당자 미지정'].join(' · ');
+  const toggle = card.querySelector('[data-unit-toggle]');
+  toggle.setAttribute('aria-label', `${id} 작업 ${toggle.getAttribute('aria-expanded') === 'true' ? '접기' : '펼치기'}`);
+}
+
+function applyCollapsed(card, toggle, body, collapsed) {
+  body.hidden = collapsed;
+  card.classList.toggle('is-collapsed', collapsed);
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function setUnitCollapsed(card, collapsed) {
+  applyCollapsed(card, card.querySelector('[data-unit-toggle]'), card.querySelector('[data-unit-body]'), collapsed);
+  updateUnitIdentity(card);
+}
+
+function fullScopeEligible(card) {
+  const serviceId = card.querySelector('[data-unit="service"]').value;
+  const service = state.status?.services.find(({ id }) => id === serviceId);
+  const serviceCards = [...workUnits.querySelectorAll('.unit-card')]
+    .filter((candidate) => candidate.querySelector('[data-unit="service"]').value === serviceId);
+  const firstForService = serviceCards[0] === card;
+  return Boolean(service?.bootstrapEligible && firstForService);
+}
+
+function syncFullScope(card) {
+  const checkbox = card.querySelector('[data-full-scope]');
+  const listNode = card.querySelector('.path-list');
+  const addButton = card.querySelector('.add-path');
+  if (checkbox.checked) {
+    while (listNode.children.length > 1) listNode.lastElementChild.remove();
+    const input = listNode.querySelector('[data-path]');
+    input.value = '**';
+    input.disabled = true;
+    addButton.hidden = true;
+  } else {
+    listNode.querySelectorAll('[data-path]').forEach((input) => {
+      input.disabled = false;
+      if (input.value.trim() === '**') input.value = '';
+    });
+    addButton.hidden = false;
+  }
+}
+
+function refreshFullScopeOptions() {
+  workUnits.querySelectorAll('.unit-card').forEach((card) => {
+    const option = card.querySelector('.scope-all-option');
+    const checkbox = card.querySelector('[data-full-scope]');
+    const eligible = fullScopeEligible(card);
+    option.hidden = !eligible;
+    checkbox.disabled = !eligible;
+    if (!eligible && checkbox.checked) checkbox.checked = false;
+    syncFullScope(card);
+  });
+}
+
+function addPath(card, value = '') {
+  const listNode = card.querySelector('.path-list');
+  const row = document.createElement('div');
+  row.className = 'path-row';
+  const input = document.createElement('input');
+  input.dataset.path = '';
+  input.value = value;
+  input.placeholder = 'src/feature/**';
+  const position = listNode.children.length + 1;
+  input.setAttribute('aria-label', `수정 경로 ${position}`);
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'quiet icon-button';
+  remove.setAttribute('aria-label', `수정 경로 ${position} 삭제`);
+  remove.textContent = '×';
+  remove.addEventListener('click', () => {
+    if (listNode.children.length === 1) input.value = '';
+    else row.remove();
+    [...listNode.querySelectorAll('[data-path]')].forEach((control, index) => control.setAttribute('aria-label', `수정 경로 ${index + 1}`));
+    invalidatePreview();
+  });
+  row.append(input, remove);
+  listNode.append(row);
+}
+
 function addUnit() {
+  workUnits.querySelectorAll('.unit-card').forEach((existing) => setUnitCollapsed(existing, true));
   const card = unitTemplate.content.firstElementChild.cloneNode(true);
+  unitPanelSequence += 1;
+  const body = card.querySelector('[data-unit-body]');
+  body.id = `unit-panel-${unitPanelSequence}`;
+  const toggle = card.querySelector('[data-unit-toggle]');
+  toggle.setAttribute('aria-controls', body.id);
+  toggle.addEventListener('click', () => setUnitCollapsed(card, toggle.getAttribute('aria-expanded') === 'true'));
+  refreshUnitGoals(card);
   refreshUnitServices(card);
+  card.querySelector('[data-unit="service"]').addEventListener('change', () => {
+    updateUnitIdentity(card);
+    refreshFullScopeOptions();
+  });
+  card.querySelector('[data-unit="goal"]').addEventListener('input', () => updateUnitIdentity(card));
+  card.querySelector('[data-unit="writer"]').addEventListener('input', () => updateUnitIdentity(card));
+  card.querySelector('[data-full-scope]').addEventListener('change', () => {
+    syncFullScope(card);
+    invalidatePreview();
+  });
+  card.querySelector('.add-path').addEventListener('click', () => addPath(card));
   card.querySelector('.remove').addEventListener('click', () => {
     card.remove();
-    if (!workUnits.querySelector('.unit-card')) workUnits.innerHTML = '<div class="empty-state">아직 추가한 작업이 없습니다. 회의에서 합의한 첫 작업을 추가해 주세요.</div>';
-    state.revision = null;
+    if (!workUnits.querySelector('.unit-card')) workUnits.innerHTML = '<div class="empty-state"><strong>아직 작업이 없습니다</strong><span>목표를 구현할 첫 작업 단위를 추가해 주세요.</span></div>';
+    document.querySelectorAll('.unit-card').forEach(updateUnitIdentity);
+    refreshFullScopeOptions();
+    invalidatePreview();
   });
   workUnits.querySelector('.empty-state')?.remove();
   workUnits.append(card);
-  card.querySelector('[data-unit="id"]').focus();
-  state.revision = null;
+  addPath(card);
+  refreshFullScopeOptions();
+  setUnitCollapsed(card, false);
+  card.querySelector('[data-unit="goalId"]').focus();
+  invalidatePreview();
+}
+
+function renderContractServices(card) {
+  const container = card.querySelector('.contract-services');
+  const selected = new Set([...container.querySelectorAll('[data-contract-service]:checked')].map(({ value }) => value));
+  container.replaceChildren(...selectedServices().map((id) => {
+    const label = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = id;
+    input.dataset.contractService = '';
+    input.checked = selected.has(id);
+    input.setAttribute('aria-label', `${id} 계약 참여`);
+    label.append(input, document.createTextNode(id));
+    return label;
+  }));
+  updateContractSummary(card);
+}
+
+function updateContractSummary(card) {
+  const services = [...card.querySelectorAll('[data-contract-service]:checked')].map(({ value }) => value);
+  const written = card.querySelector('[data-contract="content"]').value.trim();
+  card.querySelector('[data-contract-summary]').textContent = [
+    services.length ? services.join(', ') : '참여 서비스 미지정',
+    written ? '내용 작성됨' : '내용 미작성',
+  ].join(' · ');
+  const toggle = card.querySelector('[data-contract-toggle]');
+  const id = card.querySelector('[data-contract-id]').textContent;
+  toggle.setAttribute('aria-label', `${id} 계약 ${toggle.getAttribute('aria-expanded') === 'true' ? '접기' : '펼치기'}`);
+}
+
+function setContractCollapsed(card, collapsed) {
+  applyCollapsed(card, card.querySelector('[data-contract-toggle]'), card.querySelector('[data-contract-body]'), collapsed);
+  updateContractSummary(card);
+}
+
+function refreshContractIndexes() {
+  contracts.querySelectorAll('.contract-card').forEach((card, index) => {
+    const id = `CONTRACT-${String(index + 1).padStart(3, '0')}`;
+    card.querySelector('[data-contract-id]').textContent = id;
+    card.querySelector('[data-contract-heading]').textContent = card.querySelector('[data-contract="name"]').value.trim() || `계약 ${index + 1}`;
+    card.querySelector('.remove').setAttribute('aria-label', `${id} 삭제`);
+    updateContractSummary(card);
+  });
+}
+
+function addContract() {
+  contracts.querySelectorAll('.contract-card').forEach((existing) => setContractCollapsed(existing, true));
+  const card = contractTemplate.content.firstElementChild.cloneNode(true);
+  contractPanelSequence += 1;
+  const body = card.querySelector('[data-contract-body]');
+  body.id = `contract-panel-${contractPanelSequence}`;
+  const toggle = card.querySelector('[data-contract-toggle]');
+  toggle.setAttribute('aria-controls', body.id);
+  toggle.addEventListener('click', () => setContractCollapsed(card, toggle.getAttribute('aria-expanded') === 'true'));
+  renderContractServices(card);
+  card.querySelector('[data-contract="name"]').addEventListener('input', refreshContractIndexes);
+  card.querySelector('.contract-services').addEventListener('change', () => updateContractSummary(card));
+  card.querySelector('[data-contract="content"]').addEventListener('input', () => updateContractSummary(card));
+  card.querySelector('[data-contract="file"]').addEventListener('change', async ({ target }) => {
+    const file = target.files?.[0];
+    if (!file) return;
+    if (!/\.(?:md|json)$/i.test(file.name)) {
+      target.value = '';
+      showMessage('Markdown(.md) 또는 JSON(.json) 파일만 불러올 수 있습니다.');
+      return;
+    }
+    const content = await file.text();
+    if (file.name.toLowerCase().endsWith('.json')) {
+      try {
+        JSON.parse(content);
+      } catch {
+        target.value = '';
+        showMessage('올바른 JSON 파일이 아닙니다. 문법을 확인해 주세요.');
+        return;
+      }
+    }
+    card.querySelector('[data-contract="name"]').value = file.name;
+    card.querySelector('[data-contract="content"]').value = content;
+    refreshContractIndexes();
+    invalidatePreview();
+  });
+  card.querySelector('.remove').addEventListener('click', () => {
+    card.remove();
+    refreshContractIndexes();
+    invalidatePreview();
+  });
+  contracts.append(card);
+  refreshContractIndexes();
+  setContractCollapsed(card, false);
+  card.querySelector('[data-contract="name"]').focus();
+  invalidatePreview();
 }
 
 function collectDraft() {
@@ -118,19 +571,30 @@ function collectDraft() {
     changeId: data.get('changeId'),
     title: data.get('title'),
     coordinator: data.get('coordinator'),
-    goal: data.get('goal'),
-    nonGoals: lines(data.get('nonGoals')),
-    userFlow: lines(data.get('userFlow')),
+    goals: [...goals.querySelectorAll('.goal-card')].map((card) => ({
+      id: card.dataset.goalId,
+      title: card.querySelector('[data-goal="title"]').value,
+      outcome: card.querySelector('[data-goal="outcome"]').value,
+    })),
+    noNonGoals: Boolean(data.get('noNonGoals')),
+    nonGoals: data.get('noNonGoals') ? [] : lines(data.get('nonGoals')),
+    hasUserFlow: Boolean(data.get('hasUserFlow')),
+    userFlow: data.get('hasUserFlow') ? lines(data.get('userFlow')) : [],
     acceptanceCriteria: lines(data.get('acceptanceCriteria')),
     services: selectedServices(),
     noSharedContract: Boolean(data.get('noSharedContract')),
-    contracts: data.get('noSharedContract') ? [] : [{ name: data.get('contractName'), content: data.get('contractContent') }],
+    contracts: data.get('noSharedContract') ? [] : [...contracts.querySelectorAll('.contract-card')].map((card) => ({
+      name: card.querySelector('[data-contract="name"]').value,
+      content: card.querySelector('[data-contract="content"]').value,
+      serviceIds: [...card.querySelectorAll('[data-contract-service]:checked')].map(({ value }) => value),
+    })),
     workUnits: [...workUnits.querySelectorAll('.unit-card')].map((card) => ({
-      id: card.querySelector('[data-unit="id"]').value,
+      id: card.dataset.unitId || '',
+      goalId: card.querySelector('[data-unit="goalId"]').value,
       service: card.querySelector('[data-unit="service"]').value,
       goal: card.querySelector('[data-unit="goal"]').value,
       writer: card.querySelector('[data-unit="writer"]').value,
-      writePaths: lines(card.querySelector('[data-unit="writePaths"]').value),
+      writePaths: [...card.querySelectorAll('[data-path]')].map(({ value }) => value).filter((value) => value.trim()),
       dependsOn: lines(card.querySelector('[data-unit="dependsOn"]').value),
       verify: lines(card.querySelector('[data-unit="verify"]').value),
     })),
@@ -138,22 +602,49 @@ function collectDraft() {
 }
 
 function renderFiles(files) {
+  const filePurpose = (path) => {
+    if (path === 'PLAN.md') return '목표와 범위, 완료 기준, 계약을 사람이 검토하는 계획 문서입니다.';
+    if (path === 'WORK_UNITS.yaml') return '작업 단위별 저장소, 담당자, 경로, 의존성과 실행 상태를 정의합니다.';
+    if (path === 'PRS.yaml') return '작업별 PR 번호와 기준·작업·병합 SHA를 기록하는 추적 문서입니다.';
+    if (path === 'STATUS.md') return '전체 계획의 현재 상태, 작업 진행도와 다음 승인 단계를 요약합니다.';
+    if (path.startsWith('releases/')) return '서비스별 검증 대상 SHA와 후보 통합 상태를 고정합니다.';
+    if (path.startsWith('contracts/')) return '서비스 사이에서 함께 지킬 API·이벤트·데이터 계약을 기록합니다.';
+    return '계획을 실행하고 검증하는 데 필요한 생성 파일입니다.';
+  };
   state.files = files;
   state.activeFile = files[0]?.path;
   const tabs = document.querySelector('#file-tabs');
   const preview = document.querySelector('#file-preview');
   const select = (path) => {
     state.activeFile = path;
-    tabs.querySelectorAll('button').forEach((button) => button.setAttribute('aria-selected', String(button.dataset.path === path)));
+    tabs.querySelectorAll('button').forEach((button) => {
+      const selected = button.dataset.path === path;
+      button.setAttribute('aria-selected', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      if (selected) preview.setAttribute('aria-labelledby', button.id);
+    });
     preview.textContent = files.find((file) => file.path === path)?.diff ?? '';
+    document.querySelector('.file-preview-help').textContent = filePurpose(path);
   };
-  tabs.replaceChildren(...files.map(({ path }) => {
+  tabs.replaceChildren(...files.map(({ path }, index) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.role = 'tab';
+    button.id = `file-tab-${index + 1}`;
+    button.setAttribute('aria-controls', 'file-preview');
     button.dataset.path = path;
     button.textContent = path;
     button.addEventListener('click', () => select(path));
+    button.addEventListener('keydown', ({ key }) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) return;
+      const buttons = [...tabs.querySelectorAll('[role="tab"]')];
+      const currentIndex = buttons.indexOf(button);
+      const targetIndex = key === 'Home' ? 0
+        : key === 'End' ? buttons.length - 1
+          : (currentIndex + (key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+      select(buttons[targetIndex].dataset.path);
+      buttons[targetIndex].focus();
+    });
     return button;
   }));
   if (state.activeFile) select(state.activeFile);
@@ -162,6 +653,8 @@ function renderFiles(files) {
 function renderErrors(errors) {
   const summary = document.querySelector('#validation-summary');
   summary.className = 'validation-summary error';
+  const title = document.createElement('strong');
+  title.textContent = '저장 전 확인이 필요합니다';
   const list = document.createElement('ul');
   for (const error of errors) {
     const item = document.createElement('li');
@@ -173,21 +666,33 @@ function renderErrors(errors) {
     item.append(button);
     list.append(item);
   }
-  summary.replaceChildren(document.createTextNode('저장 전 확인이 필요합니다.'), list);
+  summary.replaceChildren(title, list);
 }
 
 function focusError(field) {
-  const topLevel = field.split('.')[0];
+  const [topLevel, rawIndex, property] = field.split('.');
   const stepByField = {
-    changeId: 0, title: 0, coordinator: 0, goal: 0,
+    changeId: 0, title: 0, coordinator: 0, goals: 0,
     nonGoals: 1, userFlow: 1, acceptanceCriteria: 1, services: 1,
     workUnits: 2, contracts: 3, review: 4,
   };
-  showStep(stepByField[topLevel] ?? 4);
+  showStep(stepByField[topLevel] ?? 4, { force: true });
   let target = form.elements[topLevel];
-  if (topLevel === 'workUnits') target = workUnits.querySelector('[data-unit]');
+  const index = Number(rawIndex);
+  if (topLevel === 'goals') target = goals.querySelectorAll('.goal-card')[index]?.querySelector(`[data-goal="${property}"]`) || goals.querySelector('[data-goal]');
+  if (topLevel === 'workUnits') {
+    const card = workUnits.querySelectorAll('.unit-card')[index];
+    if (card) setUnitCollapsed(card, false);
+    target = property === 'writePaths' ? card?.querySelector('[data-path]') : card?.querySelector(`[data-unit="${property}"]`);
+    target ||= workUnits.querySelector('[data-unit]');
+  }
   if (topLevel === 'services') target = form.querySelector('[name="services"]');
-  if (topLevel === 'contracts') target = form.elements.noSharedContract;
+  if (topLevel === 'contracts') {
+    const card = contracts.querySelectorAll('.contract-card')[index];
+    if (card) setContractCollapsed(card, false);
+    target = property === 'serviceIds' ? card?.querySelector('[data-contract-service]') : card?.querySelector(`[data-contract="${property}"]`);
+    target ||= form.elements.noSharedContract;
+  }
   target?.focus();
 }
 
@@ -196,48 +701,82 @@ function invalidatePreview() {
   document.querySelector('#save').disabled = true;
   const summary = document.querySelector('#validation-summary');
   if (!document.querySelector('#review').hidden) {
-    summary.className = 'validation-summary';
-    summary.textContent = '입력 내용이 변경되었습니다. 저장 전에 계획 검토를 다시 실행하세요.';
+    summary.className = 'validation-summary stale';
+    summary.textContent = '입력이 변경되었습니다. 저장 전에 계획 검토를 다시 실행하세요.';
+    document.querySelector('#save-guidance').textContent = '입력이 변경되어 저장을 잠갔습니다. 계획 검토를 다시 실행하세요.';
   }
 }
 
 async function preview() {
   clearMessage();
+  for (let step = 0; step < 4; step += 1) {
+    const invalid = validateStep(step);
+    if (invalid.length) {
+      showStep(step, { force: true });
+      showMessage('검토 전에 표시된 필수 항목을 완성해 주세요.');
+      invalid[0]?.focus?.();
+      return;
+    }
+  }
   state.revision = null;
-  document.querySelector('#save').disabled = true;
+  const previewButton = document.querySelector('#preview');
+  const saveButton = document.querySelector('#save');
+  const requestVersion = JSON.stringify(collectDraft());
+  previewButton.disabled = true;
+  previewButton.setAttribute('aria-busy', 'true');
+  saveButton.disabled = true;
+  document.querySelector('#save-guidance').textContent = '저장소 규칙을 검사하고 있습니다.';
   document.querySelector('#review-empty').hidden = true;
   document.querySelector('#review').hidden = false;
   try {
     const result = await request('/api/changes/preview', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(collectDraft()),
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: requestVersion,
     });
+    if (requestVersion !== JSON.stringify(collectDraft())) return;
     state.revision = result.revision;
     const summary = document.querySelector('#validation-summary');
     summary.className = 'validation-summary success';
-    summary.textContent = `검사 통과 · strict 검사 종료 코드 ${result.validation.exitCode}. 계획 승인은 별도로 받아야 합니다.`;
+    const title = document.createElement('strong');
+    title.textContent = '저장 준비 완료';
+    const resultLine = document.createElement('span');
+    resultLine.textContent = `저장소 규칙 검사 통과 · 종료 코드 ${result.validation.exitCode}`;
+    const note = document.createElement('small');
+    note.textContent = '계획 승인은 별도로 받아야 합니다.';
+    summary.replaceChildren(title, resultLine, note);
     renderFiles(result.files);
-    document.querySelector('#save').disabled = false;
+    saveButton.disabled = false;
+    document.querySelector('#save-guidance').textContent = '검토를 통과했습니다. 현재 내용을 계획 초안으로 저장할 수 있습니다.';
   } catch (error) {
     renderErrors(error.body?.errors ?? [{ message: error.message }]);
     document.querySelector('#file-tabs').replaceChildren();
     document.querySelector('#file-preview').textContent = '';
+    document.querySelector('#save-guidance').textContent = '검토 오류를 수정한 뒤 계획 검토를 다시 실행하세요.';
+  } finally {
+    previewButton.disabled = false;
+    previewButton.removeAttribute('aria-busy');
   }
 }
 
 async function save() {
+  const saveButton = document.querySelector('#save');
+  saveButton.disabled = true;
+  saveButton.setAttribute('aria-busy', 'true');
+  document.querySelector('#save-guidance').textContent = '계획 초안을 저장하고 있습니다.';
   try {
     const result = await request('/api/changes', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ draft: collectDraft(), revision: state.revision }),
     });
-    document.querySelector('#save').disabled = true;
-    showMessage(`계획을 저장했습니다. 파일 ${result.files.length}개를 만들었습니다. 다음 단계는 계획 PR 검토입니다.`, 'success');
+    showMessage(`계획 초안을 저장했습니다. 파일 ${result.files.length}개를 만들었습니다. 다음 단계는 계획 PR 검토입니다.`, 'success');
+    document.querySelector('#save-guidance').textContent = `저장 완료 · 파일 ${result.files.length}개를 만들었습니다.`;
     await loadStatus();
   } catch (error) {
     state.revision = null;
-    document.querySelector('#save').disabled = true;
     showMessage(error.message);
+    document.querySelector('#save-guidance').textContent = `${error.message} 계획 검토를 다시 실행해 주세요.`;
+  } finally {
+    saveButton.removeAttribute('aria-busy');
   }
 }
 
@@ -260,9 +799,11 @@ function packetForm(unit, change, planSha) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'primary';
-  button.textContent = '작업 패킷 만들기';
+  button.textContent = '작업 지시서 만들기';
   button.disabled = !unit.eligible;
   button.addEventListener('click', async () => {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
     try {
       const result = await request('/api/packets', {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -272,12 +813,14 @@ function packetForm(unit, change, planSha) {
       receipt.className = 'help';
       receipt.textContent = `생성 완료: ${result.path} · sha256:${result.digest}`;
       const packet = document.createElement('pre');
-      packet.setAttribute('aria-label', `${unit.id} 작업 패킷 내용`);
+      packet.setAttribute('aria-label', `${unit.id} 작업 지시서 내용`);
       packet.textContent = result.content;
       wrapper.append(receipt, packet);
-      button.disabled = true;
     } catch (error) {
+      button.disabled = !unit.eligible;
       showMessage(error.message);
+    } finally {
+      button.removeAttribute('aria-busy');
     }
   });
   wrapper.append(runLabel, button);
@@ -289,32 +832,91 @@ async function checkDispatch() {
   const change = String(data.get('dispatchChange') ?? '').trim();
   const planSha = String(data.get('planSha') ?? '').trim();
   const resultNode = document.querySelector('#dispatch-result');
+  const checkButton = document.querySelector('#check-dispatch');
   resultNode.textContent = '확인 중…';
+  checkButton.disabled = true;
+  checkButton.setAttribute('aria-busy', 'true');
   try {
     const result = await request(`/api/dispatch?change=${encodeURIComponent(change)}&planSha=${encodeURIComponent(planSha)}`);
     resultNode.replaceChildren(...result.units.map((unit) => packetForm(unit, change, planSha)));
-    if (!result.units.length) resultNode.textContent = '시작할 수 있는 작업이 없습니다.';
+    if (!result.units.length) resultNode.textContent = '지시서를 만들 수 있는 작업이 없습니다.';
   } catch (error) {
     resultNode.textContent = error.message;
+  } finally {
+    checkButton.disabled = false;
+    checkButton.removeAttribute('aria-busy');
   }
 }
 
 document.querySelectorAll('[data-next]').forEach((button) => button.addEventListener('click', () => showStep(button.dataset.next)));
-document.querySelectorAll('[data-back]').forEach((button) => button.addEventListener('click', () => showStep(button.dataset.back)));
+document.querySelectorAll('[data-back]').forEach((button) => button.addEventListener('click', () => showStep(button.dataset.back, { force: true })));
 document.querySelectorAll('[data-step-target]').forEach((button) => button.addEventListener('click', () => showStep(button.dataset.stepTarget)));
+document.querySelector('#add-goal').addEventListener('click', addGoal);
 document.querySelector('#add-unit').addEventListener('click', addUnit);
+document.querySelector('#add-contract').addEventListener('click', addContract);
 document.querySelector('#preview').addEventListener('click', preview);
 document.querySelector('#save').addEventListener('click', save);
+document.querySelector('#service-register-open').addEventListener('click', () => {
+  resetServiceRegistration();
+  serviceDialog.showModal();
+  serviceForm.elements.serviceRepo.focus();
+});
+document.querySelector('#service-preview').addEventListener('click', previewServiceRegistration);
+document.querySelector('#service-refresh').addEventListener('click', previewServiceRegistration);
+document.querySelector('#service-register').addEventListener('click', registerService);
+serviceForm.elements.serviceRepo.addEventListener('input', () => {
+  servicePreviewVersion += 1;
+  const hasRepo = Boolean(serviceForm.elements.serviceRepo.value.trim());
+  document.querySelector('#service-preview').disabled = !hasRepo;
+  document.querySelector('#service-preview').removeAttribute('aria-busy');
+  document.querySelector('#service-refresh').disabled = true;
+  document.querySelector('#service-register').disabled = true;
+  serviceForm.elements.serviceStack.disabled = true;
+});
+serviceDialog.addEventListener('close', () => { servicePreviewVersion += 1; });
+serviceForm.elements.serviceStack.addEventListener('input', ({ target }) => {
+  document.querySelector('#service-register').disabled = !target.value.trim();
+});
+document.querySelector('#refresh-services').addEventListener('click', async ({ currentTarget }) => {
+  currentTarget.disabled = true;
+  currentTarget.setAttribute('aria-busy', 'true');
+  try {
+    await loadStatus();
+    showMessage('등록된 서비스 목록을 새로고침했습니다.', 'success');
+  } catch (error) {
+    showMessage(error.message);
+  } finally {
+    currentTarget.disabled = false;
+    currentTarget.removeAttribute('aria-busy');
+  }
+});
 document.querySelector('#dispatch-open').addEventListener('click', () => document.querySelector('#dispatch-dialog').showModal());
 document.querySelector('#check-dispatch').addEventListener('click', checkDispatch);
+form.elements.noNonGoals.addEventListener('change', ({ target }) => {
+  document.querySelector('#non-goals-field').hidden = target.checked;
+  invalidatePreview();
+});
+form.elements.hasUserFlow.addEventListener('change', ({ target }) => {
+  document.querySelector('#user-flow-field').hidden = !target.checked;
+  if (target.checked) form.elements.userFlow.focus();
+  invalidatePreview();
+});
 form.elements.noSharedContract.addEventListener('change', ({ target }) => {
   document.querySelector('#contract-fields').hidden = target.checked;
+  if (!target.checked && !contracts.querySelector('.contract-card')) addContract();
   invalidatePreview();
 });
 form.addEventListener('input', invalidatePreview);
-form.addEventListener('change', () => {
-  document.querySelectorAll('.unit-card').forEach(refreshUnitServices);
+form.addEventListener('change', ({ target }) => {
+  if (target.matches('[name="services"]')) {
+    document.querySelectorAll('.unit-card').forEach(refreshUnitServices);
+    document.querySelectorAll('.contract-card').forEach(renderContractServices);
+    refreshFullScopeOptions();
+  }
+  if (target.matches('[data-goal="title"]')) document.querySelectorAll('.unit-card').forEach(refreshUnitGoals);
   invalidatePreview();
 });
 
+addGoal();
+refreshStepAvailability();
 loadStatus().catch((error) => showMessage(error.message));
