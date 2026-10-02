@@ -1,0 +1,13 @@
+schema_version: 1
+change_id: CHG-AGENT-001
+candidate: 1
+state: draft
+plan_sha: pending-planning-merge
+services:
+  - repo: todo-collab-front
+    path: services/todo-collab-front
+    base_sha: c33b5990dbca3379597deb02aa2bbb746de01dd3
+    sha: pending-human-approved-merge
+    source_prs:
+      - todo-collab-front
+evidence: []

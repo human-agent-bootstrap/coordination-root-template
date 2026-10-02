@@ -77,9 +77,7 @@ try {
       if (!Array.isArray(service.owners) || service.owners.length === 0) {
         problems.push(`service ${service.id}: owners must contain at least one GitHub user or team`);
       }
-      if (!Array.isArray(service.verify) || service.verify.length === 0) {
-        problems.push(`service ${service.id}: verify must contain at least one command`);
-      }
+      if (service.verify !== undefined && !Array.isArray(service.verify)) problems.push(`service ${service.id}: verify must be a list`);
     }
   }
 
@@ -213,7 +211,7 @@ try {
   }
 
   if (registry.services.length === 0) {
-    process.stdout.write('NOTE: no services registered yet. Add one with: npm run service:add -- --id <id> --repo <url> --apply\n');
+    process.stdout.write('NOTE: no services registered yet. Add one with: npm run service:add -- --repo <https-url> --apply\n');
   }
 
   for (const warning of warnings) process.stdout.write(`WARNING: ${warning}\n`);

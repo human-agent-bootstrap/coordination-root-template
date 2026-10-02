@@ -1,5 +1,19 @@
 version: 2
 github:
-  host: <GITHUB-HOST>
-  api_base: <GITHUB-API-BASE>
-services: []
+  host: github.com
+  api_base: https://api.github.com
+services:
+  - id: todo-collab-front
+    path: services/todo-collab-front
+    repo: https://github.com/human-agent-bootstrap/todo-collab-front.git
+    stack: node
+    owners:
+      - "@human-agent-bootstrap"
+    verify: []
+  - id: todo-collab-back
+    path: services/todo-collab-back
+    repo: https://github.com/human-agent-bootstrap/todo-collab-back.git
+    stack: python
+    owners:
+      - "@human-agent-bootstrap"
+    verify: []

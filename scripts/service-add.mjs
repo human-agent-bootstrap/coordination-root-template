@@ -5,13 +5,12 @@ import { fail, parseArgs, readRegistry, registryPath, required, safeIdentifier }
 
 try {
   const options = parseArgs(process.argv.slice(2));
-  required(options, 'id', 'repo');
-  const id = safeIdentifier('service id', options.id);
+  required(options, 'repo');
   const url = options.repo;
   const registry = readRegistry();
   const githubHost = registry.github.host;
+  let parsed;
   if (!url.startsWith('file://')) {
-    let parsed;
     try {
       parsed = new URL(url);
     } catch {
@@ -24,6 +23,10 @@ try {
       throw new Error(`invalid GitHub repository URL: ${url}`);
     }
   }
+  const repositoryName = url.startsWith('file://')
+    ? new URL(url).pathname.split('/').filter(Boolean).at(-1)
+    : parsed.pathname.split('/').filter(Boolean).at(-1);
+  const id = safeIdentifier('service id', options.id ?? repositoryName.replace(/\.git$/i, ''));
   const path = options.path ?? `services/${id}`;
   if (!path.startsWith('services/')) throw new Error(`invalid --path: must live under services/, got ${path}`);
 
@@ -33,10 +36,10 @@ try {
   if (existsSync(join(process.cwd(), path))) throw new Error(`${path} already exists on disk`);
 
   const stack = options.stack ?? 'unspecified';
-  const owners = (options.owners ?? '').split(',').map((owner) => owner.trim()).filter(Boolean);
+  if (!/^[A-Za-z0-9][A-Za-z0-9+_.-]{0,63}$/.test(stack)) throw new Error('invalid --stack value');
+  const inferredOwner = parsed ? `@${parsed.pathname.split('/').filter(Boolean)[0]}` : '';
+  const owners = (options.owners ?? inferredOwner).split(',').map((owner) => owner.trim()).filter(Boolean);
   const verify = (options.verify ?? '').split(',').map((command) => command.trim()).filter(Boolean);
-  if (!url.startsWith('file://') && owners.length === 0) throw new Error('--owners is required for a private service');
-  if (!url.startsWith('file://') && verify.length === 0) throw new Error('--verify is required for a private service');
 
   const entry = [
     '',
@@ -45,16 +48,14 @@ try {
     `    repo: ${url}`,
     `    stack: ${stack}`,
     ...(owners.length ? ['    owners:', ...owners.map((owner) => `      - "${owner}"`)] : []),
-    ...(verify.length
-      ? ['    verify:', ...verify.map((command) => `      - ${command}`)]
-      : ['    # Declare this service\'s verification commands before dispatching work.', '    verify: []']),
+    ...(verify.length ? ['    verify:', ...verify.map((command) => `      - ${command}`)] : ['    verify: []']),
     '',
   ].join('\n');
 
   if (!options.apply) {
     process.stdout.write(`DRY RUN: would add submodule ${path} -> ${url}\n`);
     process.stdout.write(`DRY RUN: would append to services/registry.yaml:\n${entry}`);
-    if (!verify.length) process.stdout.write('NOTE: no --verify given; work units for this service must declare their own commands.\n');
+    if (!verify.length) process.stdout.write('NOTE: no --verify given; each active work unit must declare its own commands.\n');
     process.stdout.write('Nothing is written without --apply.\n');
   } else {
     const added = spawnSync('git', ['submodule', 'add', url, path], { encoding: 'utf8', stdio: 'inherit' });

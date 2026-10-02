@@ -7,6 +7,25 @@ This repo owns plans, contracts, ownership, PR evidence, and release candidates.
 Use it when several people (and their agents) change several repos toward one goal and
 you need the result to be verifiable rather than merely merged.
 
+## Local planning UI
+
+After registering service repositories, a coordinator can run the planning meeting without
+editing Markdown or YAML directly:
+
+```bash
+npm ci
+npm run ui
+```
+
+Open `http://127.0.0.1:4173`. The guided meeting creates a new Change preview, runs the
+existing strict registry validation, shows every generated artifact, and writes the complete
+`changes/<CHANGE-ID>/` directory only after explicit confirmation. It never commits, pushes,
+opens or merges a pull request, creates a workspace, or starts an Agent.
+
+After a human reviews and merges the planning PR, open **작업 시작 문서**, enter the planning
+merge SHA, and create the eligible Work Unit packets. The same approval and dependency rules
+as `npm run bootstrap` apply.
+
 ## Start here
 
 ```bash
@@ -28,9 +47,10 @@ A fresh repo is green with zero services and zero changes. Then:
 ```bash
 # 1. Register the repositories this project coordinates.
 #    A new service must already have one minimal anchor commit.
-npm run service:add -- --id <service-id> \
+#    Omit --apply first to inspect the dry run; the repository name becomes the service ID.
+npm run service:add -- \
   --repo https://<GITHUB-HOST>/<ORG>/<repo>.git \
-  --owners @<org>/<team> --verify "<cmd>,<cmd>" --apply
+  --stack <detected-stack> --apply
 git add .gitmodules services/registry.yaml services/<service-id>
 git commit -m "chore: register <service-id>"
 
@@ -83,6 +103,9 @@ examples/todo/               worked example; remove it once you have your own
 - Coding agents work without GitHub credentials and stop after verified local commits.
 - A Work Unit runs in one exclusive workspace: an existing clean checkout, worktree,
   separate clone, or agent-managed sandbox.
+- `service:add` derives the service ID from the repository name and records the URL owner as
+  a low-detail default. Omitting `--verify` is allowed; every active Work Unit must then declare
+  its own verification commands.
 - A new service starts from a minimal anchor commit. Its first implementation Work Unit
   may use `write_paths: ["**"]`; later units must use specific paths.
 - On the corporate Wi-Fi, people push those commits, create and merge PRs, and assemble

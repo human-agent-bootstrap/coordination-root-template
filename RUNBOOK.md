@@ -42,10 +42,8 @@ npm run init -- --name <root-name> --org <org> \
   --coordinator-owner @<org>/<team> --apply
 
 npm run service:add -- \
-  --id <service-id> \
   --repo https://github.com/<org>/<service-repo>.git \
-  --owners @<org>/<team> \
-  --verify "<test-command>,<build-or-lint-command>" \
+  --stack <detected-stack> \
   --apply
 
 npm run verify:registry
@@ -57,6 +55,9 @@ git commit -m "chore: register <service-id>"
 `npm run verify:candidate -- --detect`, `git submodule status`가 정상 종료되어야 한다.
 `change:create`는 현재 checkout이 아니라 이 Root commit의 submodule gitlink를
 `base_sha`로 사용하므로, 서비스 등록을 먼저 commit해야 한다.
+`service:add`는 저장소 이름을 서비스 ID로 사용하고 URL의 조직 또는 사용자를 기본 owner로
+기록한다. `--apply`를 빼고 먼저 dry run으로 확인한다. 서비스 등록 시 `--verify`는 생략할 수
+있지만, 실행 상태로 전환할 Work Unit에는 검증 명령을 반드시 선언해야 한다.
 
 ### 네트워크와 자격 증명
 
@@ -106,6 +107,25 @@ write_paths:
 ## 4. Change Planning
 
 Coordinator가 Change를 생성한다.
+
+### 로컬 회의형 UI 사용
+
+CLI와 Markdown 직접 편집 대신 로컬 UI에서 회의를 진행할 수 있다.
+
+```bash
+npm run ui
+# http://127.0.0.1:4173
+```
+
+UI에서 목표, 비목표, 성공 기준, 참여 서비스, 작업 단위, 담당자, 수정 범위, 의존성과
+계약을 순서대로 작성한다. 저장 전에는 생성 파일과 strict registry 검증 결과를 확인한다.
+저장하면 `changes/<CHANGE-ID>/` 전체 산출물이 생성되지만, 이는 계획 승인을 의미하지 않는다.
+기존 절차대로 Planning PR을 독립 검토하고 병합해야 한다.
+
+병합 후 UI의 **작업 시작 문서**에서 Planning merge SHA를 입력한다. SHA가 `main` 또는
+`origin/main`에서 확인되고 Work Unit의 상태, 담당자와 의존성이 유효할 때만
+`.task-packets/<run-id>.md`를 생성할 수 있다. UI는 commit, push, PR, merge, workspace 생성,
+Agent 실행 또는 Candidate 조립을 수행하지 않는다.
 
 ```bash
 npm run change:create -- \
