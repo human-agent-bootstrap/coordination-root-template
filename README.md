@@ -190,6 +190,8 @@ npm run ui
 | [RUNBOOK.md](./RUNBOOK.md) | 전체 운영 절차와 명령 레퍼런스 |
 | [AGENTS.md](./AGENTS.md) | 사람과 Agent가 지키는 실행 계약 |
 
+`RUNBOOK.md`와 `AGENTS.md`는 `WORK_UNITS.yaml`의 필드 이름과 맞추기 위해 원문 용어를 씁니다. **계획 = Change, 작업 = Work Unit, 담당자 = Writer**입니다.
+
 `CLAUDE.md`는 Claude Code가 `AGENTS.md`를 찾도록 연결하는 파일이며 별도 규칙을 담지 않습니다.
 
 ## 알아둘 경계

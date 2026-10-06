@@ -1,6 +1,6 @@
 # WRITER.md — 작업 지시서로 일하는 방법
 
-작업 지시서(Task Packet)를 받은 Writer가 읽는 문서입니다. 패킷을 받은 순간부터 서비스 PR이
+작업 지시서(Task Packet)를 받은 담당자(Writer)가 읽는 문서입니다. 지시서를 받은 순간부터 서비스 PR이
 병합될 때까지를 다룹니다.
 
 | 문서 | 역할 |
@@ -8,7 +8,7 @@
 | [`AGENTS.md`](./AGENTS.md) | Agent와 Writer가 지키는 실행 계약. 규칙의 기준 |
 | [`RUNBOOK.md`](./RUNBOOK.md) | 전체 운영 절차와 명령 레퍼런스 |
 | [`README.md`](./README.md) | Root 구성과 계획 작성까지의 시작 안내 |
-| 이 문서 | 패킷 하나를 끝내는 실행 안내 |
+| 이 문서 | 작업 지시서 하나를 끝내는 실행 안내 |
 
 작업 방식은 두 가지입니다. **직접 작업(방식 A)** 과 **Agent에 위임(방식 B)**. 1–2장은 공통이고,
 3장(직접)과 4장(위임)으로 갈라졌다가, 5장에서 같은 결과물(검증된 로컬 commit과 handoff)로 다시
@@ -16,8 +16,8 @@
 
 ## 빠른 경로
 
-패킷 이름만 넣으면 아래 명령이 각 장의 절차를 대신 실행합니다. 나머지 값(계획 SHA, 브랜치,
-base SHA, 수정 경로, 검증 명령)은 패킷에서 읽습니다.
+작업 지시서 이름만 넣으면 아래 명령이 각 장의 절차를 대신 실행합니다. 나머지 값(계획 SHA, 브랜치,
+base SHA, 수정 경로, 검증 명령)은 작업 지시서에서 읽습니다.
 
 ```bash
 npm run writer -- start   --packet <run-id> --apply   # 1–2장: 점검, 브랜치 준비, 지시문 출력
@@ -34,7 +34,7 @@ npm run writer -- pr      --packet <run-id> --apply   # 6장: push와 PR 생성
 
 ---
 
-## 1. 패킷 읽기
+## 1. 작업 지시서 읽기
 
 > 명령: `npm run writer -- start --packet <run-id>` (`--apply` 없이 실행하면 이 장의 점검만 수행합니다)
 
@@ -48,7 +48,7 @@ npm run writer -- pr      --packet <run-id> --apply   # 6장: push와 PR 생성
 # STOP WHEN 멈추고 사람에게 돌려야 하는 조건
 ```
 
-이 값들은 제안이 아니라 승인된 경계입니다. 브랜치 이름, base SHA, 경로 중 하나라도 패킷과
+이 값들은 제안이 아니라 승인된 경계입니다. 브랜치 이름, base SHA, 경로 중 하나라도 작업 지시서와
 다르면 5장의 범위 검사에서 실패합니다.
 
 시작 전에 세 가지를 확인합니다.
@@ -62,18 +62,21 @@ git -C <root> merge-base --is-ancestor <plan-sha> origin/main
 git -C <service-repo> fetch origin
 git -C <service-repo> cat-file -e <base-sha>^{commit}
 
-# 3) 패킷이 그 계획에서 나온 것인지
+# 3) 작업 지시서가 그 계획에서 나온 것인지
 npm --prefix <root> run bootstrap -- --plan-sha <plan-sha> --change <CHANGE-ID> \
   --unit <work-unit> --writer <writer> --run <run-id>
 ```
 
-3번은 `--apply`가 없는 dry run이라 파일을 만들지 않고 `Packet SHA-256`을 출력합니다. 받은 패킷
-마지막 줄과 같으면 같은 계획·같은 입력에서 나온 패킷입니다. 두 가지를 알아두세요.
+Root clone이 아직 없으면 `RUNBOOK.md` §5의 `--no-recurse-submodules` clone + 계획 SHA로 detach 방식을
+씁니다. README 「팀원으로 참여하기」의 `--recurse-submodules` clone은 UI로 계획을 함께 보려는 경우입니다.
+
+3번은 `--apply`가 없는 dry run이라 파일을 만들지 않고 `Packet SHA-256`을 출력합니다. 받은 작업 지시서
+마지막 줄과 같으면 같은 계획·같은 입력에서 나온 작업 지시서입니다. 두 가지를 알아두세요.
 
 - `Packet SHA-256`은 **Run ID까지 포함**해 계산합니다. Run ID가 다르면 같은 계획이라도 값이
-  다릅니다. 계획이 같은지만 보려면 패킷 안의 `Manifest SHA-256`을 비교하세요. 이 값은 plan
+  다릅니다. 계획이 같은지만 보려면 작업 지시서 안의 `Manifest SHA-256`을 비교하세요. 이 값은 plan
   SHA와 Change에만 의존합니다.
-- 같은 경로에 패킷 파일이 이미 있으면 dry run도 `task packet already exists`로 실패합니다.
+- 같은 경로에 작업 지시서 파일이 이미 있으면 dry run도 `task packet already exists`로 실패합니다.
   받은 파일을 잠시 다른 곳으로 옮기고 실행하세요.
 
 ## 2. Workspace 준비 (공통)
@@ -87,7 +90,7 @@ clean checkout, worktree, 별도 clone, Agent 하네스의 격리 workspace 중 
 
 ```bash
 # 기존 checkout을 쓰는 경우
-git -C <service-repo> switch -c <packet의 Required branch> <packet의 Base SHA>
+git -C <service-repo> switch -c <작업 지시서의 Required branch> <작업 지시서의 Base SHA>
 
 # 병렬 작업이거나 로컬 변경이 남아 있는 경우
 git -C <service-repo> worktree add -b <Required branch> <workspace-path> <Base SHA>
@@ -114,7 +117,7 @@ stash·reset·삭제하지 않습니다.
 > 명령: `start`가 출력한 지시문을 그대로 전달하고, 끝나면 `npm run writer -- check --packet <run-id>`
 
 
-도구는 무엇이든 상관없습니다. 통일하는 것은 도구가 아니라 패킷과 증거입니다.
+도구는 무엇이든 상관없습니다. 통일하는 것은 도구가 아니라 작업 지시서와 증거입니다.
 
 **4.1 Writer가 먼저 할 일**
 
@@ -122,14 +125,14 @@ stash·reset·삭제하지 않습니다.
   하도록 두지 마세요. 이 방식에서 사고가 나는 지점은 대부분 여기입니다.
 - Agent에게 PAT나 `COORDINATION_GITHUB_TOKEN`을 주지 않습니다. Agent는 push·PR·merge를
   하지 않으므로 자격 증명이 필요 없습니다 (`RUNBOOK.md` §3).
-- 패킷 파일과 Root clone 경로를 알려 줍니다.
+- 작업 지시서 파일과 Root clone 경로를 알려 줍니다.
 
 **4.2 지시문**
 
 ```text
 <root>/AGENTS.md와 <root>/.task-packets/<run-id>.md를 읽으세요.
 작업 위치는 <workspace-path>이고, 이미 올바른 브랜치와 base SHA로 준비돼 있습니다.
-패킷에 적힌 Work Unit만 수행하세요.
+작업 지시서에 적힌 Work Unit만 수행하세요.
 write_paths 밖을 수정하거나 계약의 빈 내용을 추측하지 마세요.
 범위 확대 또는 계약 결정이 필요하면 멈추고 보고하세요.
 모든 검증 명령을 실행하고 실제 exit code를 기록하세요.
@@ -143,13 +146,13 @@ Agent의 handoff에 적힌 숫자를 그대로 믿지 않습니다. 같은 명�
 exit code를 확인합니다 — 방식 B에서 Writer가 추가로 지는 책임은 이것이 전부입니다.
 
 ```bash
-cd <workspace-path> && <패킷의 VERIFY 명령>          # exit code 직접 확인
+cd <workspace-path> && <작업 지시서의 VERIFY 명령>          # exit code 직접 확인
 (cd <root> && node scripts/workflow-check.mjs ...)   # 5장 참고
 git -C <workspace-path> diff --stat <base-sha>...HEAD
 ```
 
 Agent가 `# STOP WHEN` 조건으로 멈췄다면 범위를 넓혀 주지 말고 Coordinator에게 돌립니다.
-계약·범위·base SHA가 바뀌면 기존 승인이 무효가 되고, 새 plan SHA로 패킷을 다시 받습니다
+계약·범위·base SHA가 바뀌면 기존 승인이 무효가 되고, 새 plan SHA로 작업 지시서를 다시 받습니다
 (`RUNBOOK.md` §10).
 
 PR을 올릴 때 템플릿의 `## AI provenance` 칸에 사용한 도구와 Run ID, 그리고 Agent 작업 이후
@@ -174,7 +177,7 @@ Root clone을 현재 디렉터리로 두고 범위 검사를 실행합니다.
 
 이 검사가 막아 주는 것:
 
-- 브랜치 이름이 패킷의 `Required branch`와 다른 경우
+- 브랜치 이름이 작업 지시서의 `Required branch`와 다른 경우
 - HEAD가 `base_sha`이거나 그 후손이 아닌 경우
 - `write_paths` 밖의 변경. **commit된 것뿐 아니라 staged·unstaged·untracked 파일까지** 봅니다.
   작업 중 만든 임시 파일이나 로그를 지우지 않으면 여기서 실패합니다.
@@ -228,7 +231,7 @@ Coordinator에게 넘길 최종 증거: PR 번호, base SHA, PR head SHA, merge 
 | 서비스 저장소의 `write_paths` | **Writer** | 유일하게 쓰는 범위 |
 
 근거는 계획 자체에 있습니다. 구현 Work Unit의 `write_paths`에는 서비스 경로만 들어 있고, Root
-기록 파일은 `candidate-integration`의 `write_paths`에만 선언돼 있습니다. 패킷의
+기록 파일은 `candidate-integration`의 `write_paths`에만 선언돼 있습니다. 작업 지시서의
 `Do not modify the Root coordination files or another repository.`도 같은 말이고,
 `workflow-check`가 이를 기계적으로 막습니다.
 
@@ -269,4 +272,4 @@ Candidate PR은 구현한 사람과 **독립된 사람**이 승인합니다. 역
 - 필수 검증을 실행할 수 없다
 
 이 경우 영향받는 Work Unit의 승인은 무효입니다. Coordinator가 계획을 고쳐 다시 승인받고, 새
-plan SHA로 패킷을 재발급합니다 (`AGENTS.md` §8, `RUNBOOK.md` §10).
+plan SHA로 작업 지시서를 재발급합니다 (`AGENTS.md` §8, `RUNBOOK.md` §10).

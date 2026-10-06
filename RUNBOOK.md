@@ -1,6 +1,6 @@
-# Coordination Root 실행 Runbook
+# 협업 관리 저장소(Coordination Root) 실행 Runbook
 
-> 기준일: 2026-09-30
+> 기준일: 2026-10-06
 > 목적: 여러 서비스와 여러 AI 도구가 참여하는 Change를 동일한 계획, 계약, 작업 경계와 증거로 완료한다.
 
 ## 1. 핵심 원칙
@@ -10,9 +10,9 @@
 1 Work Unit = 1 Writer = 1 Branch = 1 Workspace
 ```
 
-- Coordination Root는 제품 코드를 소유하지 않는다.
+- Root는 제품 코드를 소유하지 않는다.
 - Root는 계획, 계약, Work Unit, PR/SHA, Candidate와 완료 증거를 관리한다.
-- Claude, Codex 등 AI 도구를 통일하지 않고 Task Packet과 결과 증거를 통일한다.
+- Claude, Codex 등 AI 도구를 통일하지 않고 작업 지시서(Task Packet)와 결과 증거를 통일한다.
 - Agent는 로컬 구현, 검증, commit과 handoff까지만 수행한다.
 - 사람 또는 CI가 push, PR, 승인, merge, Candidate와 배포를 담당한다.
 - Worktree는 필수가 아니다. 다른 Writer와 공유하지 않는 workspace가 필수다.
@@ -21,15 +21,18 @@
 
 | 역할 | 책임 |
 |---|---|
-| Coordinator | 계획·계약·Work Unit·상태·Candidate 관리 |
-| Writer | 할당된 서비스와 경로만 구현하고 검증 |
-| Reviewer | Writer와 독립적으로 PR 검토 |
-| Service Owner | 서비스 PR merge |
-| Release Owner | Candidate와 staging 결과 승인 |
+| Coordinator(계획 진행자) | 계획·계약·Work Unit·상태·Candidate 관리 |
+| Writer(담당자) | 할당된 서비스와 경로만 구현하고 검증 |
+| Reviewer(리뷰어) | Writer와 독립적으로 PR 검토 |
+| Service Owner(서비스 소유자) | 서비스 PR merge |
+| Release Owner(배포 승인자) | Candidate와 staging 결과 승인 |
 
 ## 3. 프로젝트 최초 준비
 
-Coordination Root는 프로젝트마다 한 번 만들고 서비스도 한 번 등록한다.
+Root는 프로젝트마다 한 번 만들고 서비스도 한 번 등록한다.
+
+> 템플릿으로 Root를 만들고 UI로 서비스를 등록하는 **처음 1회 경로**는 [`README.md`](./README.md)
+> Quick Start에 단계별로 있다. 이 장은 같은 작업의 CLI 경로와 운영 규칙을 정리한다.
 
 필수 환경은 Git(submodule 지원), Node.js 22 이상과 npm이다. CI는 Node.js 26을 사용한다.
 `init`, `service:add`, `change:create`, `bootstrap`은 기본적으로 dry run이며 `--apply`를
@@ -59,6 +62,12 @@ git commit -m "chore: register <service-id>"
 기록한다. `--apply`를 빼고 먼저 dry run으로 확인한다. 서비스 등록 시 `--verify`는 생략할 수
 있지만, 실행 상태로 전환할 Work Unit에는 검증 명령을 반드시 선언해야 한다.
 
+UI(`npm run ui`)의 **서비스 등록**도 같은 일을 한다. 어느 경로를 쓰든 등록을 commit해야 계획이
+작업 시작 기준을 읽을 수 있다. UI의 계획 검토는 Root `HEAD`의 submodule gitlink만 읽으므로
+stage 상태로는 실패한다.
+
+설정과 등록 commit은 Root 원격 `main`에 반영돼야 다른 담당자가 clone하고 계획 PR을 만들 수 있다.
+
 ### 네트워크와 자격 증명
 
 | 구간 | 주체 | 수행 작업 |
@@ -72,7 +81,11 @@ git commit -m "chore: register <service-id>"
 - `main` push CI만 self-hosted runner에서 private submodule과
   `COORDINATION_GITHUB_TOKEN`을 사용해 원격 PR/Candidate 검증을 다시 수행한다.
 - `main`은 직접 push를 금지하고 PR CI와 CODEOWNERS 승인을 요구하는 보호 규칙을 적용한다.
-- 토큰은 환경 변수나 Actions Secret으로만 제공하고 파일, Task Packet, 로그, 명령줄,
+  예외는 보호 규칙도 다른 참여자도 아직 없는 **1인 신규 Root의 최초 설정 commit**(초기화와
+  서비스 등록)뿐이다. PR CI는 Change와 Work Unit에 연결된 브랜치만 검사하므로
+  (`scripts/ci-workflow-check.mjs`) 설정 PR을 그대로 통과시킬 수 없다. 팀 공용 Root에서는
+  관리자가 승인한 설정 PR 경로를 사용하고, 보호 규칙을 우회하지 않는다.
+- 토큰은 환경 변수나 Actions Secret으로만 제공하고 파일, 작업 지시서, 로그, 명령줄,
   commit에 기록하지 않는다.
 - GitHub.com 조직은 `GH_HOST=github.com`을 사용한다. 별도 GitHub Enterprise Server를
   사용하는 경우에만 `init`의 host/API 값을 변경한다.
@@ -223,7 +236,7 @@ GH_HOST=github.com gh pr view <planning-pr-number> \
 
 ## 5. Writer 사전 준비
 
-> 패킷을 받은 Writer가 구현부터 PR까지 진행하는 방법은 [`WRITER.md`](./WRITER.md)에 정리돼 있다.
+> 작업 지시서를 받은 Writer가 구현부터 PR까지 진행하는 방법은 [`WRITER.md`](./WRITER.md)에 정리돼 있다.
 > 직접 작업하는 경우와 Agent에 위임하는 경우를 모두 다룬다.
 
 ### Root가 아직 없는 경우
@@ -278,12 +291,12 @@ Agent 하네스가 workspace를 자동 생성하면 해당 기능을 사용한�
 - 시작 시 관련 없는 로컬 변경 없음
 - 실제 작업 경로를 `workflow-check --repo-path`에 전달할 수 있음
 
-Branch에는 Agent, 모델 또는 vendor 이름을 넣지 않는다. 실행 provenance는 Task Packet,
+Branch에는 Agent, 모델 또는 vendor 이름을 넣지 않는다. 실행 provenance는 작업 지시서,
 handoff와 commit trailer에 기록한다.
 
-## 6. Task Packet 생성과 AI 지시
+## 6. 작업 지시서 생성과 AI 지시
 
-Writer의 Root clone에서 Task Packet을 생성한다.
+Writer의 Root clone에서 작업 지시서를 생성한다.
 
 ```bash
 npm --prefix <root-path> run bootstrap -- \
@@ -295,10 +308,10 @@ npm --prefix <root-path> run bootstrap -- \
   --apply
 ```
 
-`bootstrap`은 Task Packet만 생성한다. branch나 workspace는 만들지 않는다.
-Packet에는 plan SHA, Work Unit, `base_sha`, `write_paths`, 계약 snapshot과 SHA-256,
+`bootstrap`은 작업 지시서만 생성한다. branch나 workspace는 만들지 않는다.
+작업 지시서에는 plan SHA, Work Unit, `base_sha`, `write_paths`, 계약 snapshot과 SHA-256,
 검증 명령, manifest SHA-256과 packet SHA-256이 들어간다. 분산된 Writer는 같은 plan SHA에서
-Packet을 다시 생성하고 hash가 일치하는지 확인할 수 있다.
+작업 지시서를 다시 생성하고 hash가 일치하는지 확인할 수 있다.
 
 AI 도구에는 다음과 같이 지시한다.
 
@@ -487,7 +500,7 @@ Candidate PR 자신의 merge SHA만 기록하기 위한 별도 Closure PR은 만
 - 필수 검증 실행 불가
 
 계약, 범위, base SHA 또는 필수 검증이 바뀌면 영향받는 Work Unit의 기존 승인은 무효다.
-Coordinator가 Root 변경을 승인받고 새 plan SHA로 Task Packet을 다시 생성한다.
+Coordinator가 Root 변경을 승인받고 새 plan SHA로 작업 지시서를 다시 생성한다.
 
 ## 11. 완료 기준
 
@@ -509,7 +522,7 @@ Coordinator가 Root 변경을 승인받고 새 plan SHA로 Task Packet을 다시
 ```text
 서비스 사전 등록과 anchor SHA 준비
 → Change Planning 및 계약 승인
-→ Task Packet 발급
+→ 작업 지시서 발급
 → Writer별 독립 workspace에서 병렬 구현
 → 로컬 검증·commit·handoff
 → 사람이 push·PR·review·merge
@@ -524,9 +537,10 @@ Coordinator가 Root 변경을 승인받고 새 plan SHA로 Task Packet을 다시
 | 명령 | 용도 |
 |---|---|
 | `npm run init` | 템플릿을 프로젝트 값으로 초기화 |
+| `npm run ui` | 로컬 계획 UI (서비스 등록·계획 작성·계획 PR·작업 지시서 발급) |
 | `npm run service:add` | 서비스 등록과 submodule 추가 |
 | `npm run change:create` | 승인 전 Change skeleton 생성 |
-| `npm run bootstrap` | 승인된 Work Unit의 Task Packet 생성 |
+| `npm run bootstrap` | 승인된 Work Unit의 작업 지시서 생성 |
 | `npm run writer` | 작업 지시서 기반 준비·검증·커밋·PR (Writer용) |
 | `npm run workflow:check` | Root PR의 Work Unit 범위 검사 |
 | `node scripts/workflow-check.mjs ...` | 서비스 workspace의 branch·base·경로 검사 |
