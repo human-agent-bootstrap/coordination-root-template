@@ -7,8 +7,8 @@
 |---|---|
 | [`AGENTS.md`](./AGENTS.md) | Agent와 Writer가 지키는 실행 계약. 규칙의 기준 |
 | [`RUNBOOK.md`](./RUNBOOK.md) | 전체 운영 절차와 명령 레퍼런스 |
+| [`README.md`](./README.md) | Root 구성과 계획 작성까지의 시작 안내 |
 | 이 문서 | 패킷 하나를 끝내는 실행 안내 |
-| [`examples/TUTORIAL.md`](./examples/TUTORIAL.md) | 처음부터 끝까지 따라 하는 실습 |
 
 작업 방식은 두 가지입니다. **직접 작업(방식 A)** 과 **Agent에 위임(방식 B)**. 1–2장은 공통이고,
 3장(직접)과 4장(위임)으로 갈라졌다가, 5장에서 같은 결과물(검증된 로컬 commit과 handoff)로 다시

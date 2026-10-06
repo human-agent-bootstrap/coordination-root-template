@@ -442,7 +442,7 @@ test('init removes the template\'s own change records but keeps the skeleton', (
     writeFileSync(join(dir, '.github/CODEOWNERS'), '/changes/ <COORDINATOR-OWNER>\n');
     writeFileSync(join(dir, '.gitmodules'), '');
     writeFileSync(join(dir, 'README.md'), '# <PROJECT-NAME>\nclone https://<GITHUB-HOST>/<ORG>/<PROJECT-NAME>.git\n');
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '<PROJECT-NAME>', scripts: { 'test:example': 'x' } }, null, 2));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '<PROJECT-NAME>', scripts: { test: 'x' } }, null, 2));
 
     const result = run('init-project.mjs', [
       '--name', 'acme-coord',
