@@ -1,0 +1,53 @@
+schema_version: 1
+change_id: CHG-AGENT-002
+state: approved
+plan_base_sha: 07ff2debb63a9eda26f99d675d4df7e0029a2007
+plan_merge_sha: pending
+work_units:
+  - id: contract-and-plan
+    repo: root
+    state: in_progress
+    goal: Approve the scope, contracts, work boundaries, and verification gates.
+    branch: change/CHG-AGENT-002/coordination
+    base_sha: 07ff2debb63a9eda26f99d675d4df7e0029a2007
+    writer: jpyoon
+    write_paths:
+      - changes/CHG-AGENT-002/**
+    depends_on: []
+    verify:
+      - npm test
+      - npm run verify:registry -- --change CHG-AGENT-002 --strict
+  - id: todo-collab-front
+    goal_id: GOAL-001
+    repo: todo-collab-front
+    state: ready
+    goal: asdf
+    branch: feat/CHG-AGENT-002/todo-collab-front
+    base_sha: c33b5990dbca3379597deb02aa2bbb746de01dd3
+    writer: abtest
+    write_paths:
+      - src/**
+    depends_on:
+      - contract-and-plan
+    verify:
+      - npm test
+  - id: candidate-integration
+    repo: root
+    state: draft
+    goal: Pin reviewed service merge SHAs and verify the exact candidate.
+    branch: change/CHG-AGENT-002/candidate-integration
+    base_sha: pending-plan-merge
+    writer: jpyoon
+    write_paths:
+      - changes/CHG-AGENT-002/WORK_UNITS.yaml
+      - changes/CHG-AGENT-002/PRS.yaml
+      - changes/CHG-AGENT-002/STATUS.md
+      - changes/CHG-AGENT-002/releases/**
+      - e2e/**
+      - services/todo-collab-front
+    depends_on:
+      - todo-collab-front
+    verify:
+      - npm test
+      - npm run verify:prs -- --change CHG-AGENT-002
+      - npm run verify:candidate -- --change CHG-AGENT-002 --target-ref origin/main
