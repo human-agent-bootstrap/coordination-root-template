@@ -1,8 +1,9 @@
 # AGENTS.md
 
 Tool-neutral execution contract for every coding agent and human Writer. Human coordination
-procedures live in [`RUNBOOK.md`](./RUNBOOK.md); approved task truth lives in
-`changes/<CHANGE-ID>/` and `.task-packets/<run-id>.md`.
+procedures live in [`RUNBOOK.md`](./RUNBOOK.md), and [`WRITER.md`](./WRITER.md) walks a Writer
+through one task packet; approved task truth lives in `changes/<CHANGE-ID>/` and
+`.task-packets/<run-id>.md`.
 
 ## 1. Required inputs
 

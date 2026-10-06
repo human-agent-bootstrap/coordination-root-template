@@ -20,7 +20,8 @@
     "verify:prs": "node scripts/verify-prs.mjs",
     "verify:candidate": "node scripts/verify-candidate.mjs",
     "verify:candidate:ci": "node scripts/ci-candidate-check.mjs",
-    "test:e2e": "node scripts/test-e2e.mjs"
+    "test:e2e": "node scripts/test-e2e.mjs",
+    "writer": "node scripts/writer.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"

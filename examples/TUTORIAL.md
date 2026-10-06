@@ -335,7 +335,7 @@ cat .task-packets/run-api-001.md
   - tests/**
 
 # CONTRACT
-- Read AGENTS.md in the Root repository before implementation.
+- Read AGENTS.md and WRITER.md in the Root repository before implementation.
 - Approved contract snapshots (do not modify):
   - changes/CHG-NOTES-001/contracts/note.schema.json
 - Do not modify the Root coordination files or another repository.

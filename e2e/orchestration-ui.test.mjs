@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import YAML from 'yaml';
+import { recordPrNumber } from '../scripts/orchestration/plan-pr.mjs';
 import { createOrchestrationServer } from '../scripts/orchestration/server.mjs';
 
 let root;
@@ -16,7 +18,7 @@ test.beforeAll(async () => {
   mkdirSync(join(root, 'changes/CHG-EXISTING-001'), { recursive: true });
   writeFileSync(join(root, 'changes/CHG-EXISTING-001/WORK_UNITS.yaml'), `schema_version: 1
 change_id: CHG-EXISTING-001
-state: draft
+state: approved
 work_units: []
 `);
   mkdirSync(join(root, 'services/api'), { recursive: true });
@@ -60,6 +62,11 @@ services:
 test.afterAll(async () => {
   if (server) await new Promise((resolvePromise) => server.close(resolvePromise));
   if (root) rmSync(root, { recursive: true, force: true });
+});
+
+test.afterEach(() => {
+  rmSync(join(root, 'changes/CHG-BROWSER-001'), { recursive: true, force: true });
+  rmSync(join(root, 'changes/CHG-RESUME-001'), { recursive: true, force: true });
 });
 
 test('meeting flow captures multiple goals and optional scope details before saving', async ({ page }) => {
@@ -148,11 +155,12 @@ test('meeting flow captures multiple goals and optional scope details before sav
   await expect(page.locator('.file-preview-help')).toContainText('작업 단위');
   await page.getByRole('button', { name: '계획 초안 저장' }).click();
   await expect(page.getByText('계획 초안을 저장했습니다.')).toBeVisible();
+  await expect(page.getByLabel('계획 ID').first()).toHaveJSProperty('readOnly', true);
   await expect(page.locator('#dispatch-open')).toBeEnabled();
   assert.equal(existsSync(join(root, 'changes/CHG-BROWSER-001/WORK_UNITS.yaml')), true);
 
   await page.locator('#dispatch-open').click();
-  await expect(page.getByText('승인·병합된 계획 ID와 커밋 SHA를 입력하세요.')).toBeVisible();
+  await expect(page.getByText('병합된 계획을 고르면 실행 가능한 작업을 확인하고 담당자별 지시서를 만듭니다.')).toBeVisible();
   await page.getByLabel('승인된 계획 커밋 SHA').fill('a'.repeat(40));
   await page.getByLabel('계획 ID').last().fill('CHG-BROWSER-001');
   await page.getByRole('button', { name: '실행 가능한 작업 확인' }).click();
@@ -309,6 +317,98 @@ test('service registration ignores a preview response after the URL changes', as
   await expect(page.locator('#service-register')).toBeDisabled();
 });
 
+test('a single saved draft is restored into every planning step on startup', async ({ page }) => {
+  const change = join(root, 'changes/CHG-RESUME-001');
+  mkdirSync(join(change, 'contracts'), { recursive: true });
+  writeFileSync(join(change, 'PLAN.md'), `# CHG-RESUME-001 — 이어서 작성할 계획
+
+## State
+
+- Status: DRAFT
+- Coordinator: jpyoon
+
+## Goals
+
+### GOAL-001 — 계획 이어쓰기
+
+저장된 내용을 다시 편집한다.
+
+## Non-goals
+
+- 배포는 하지 않는다.
+
+## User flow
+
+1. 초안을 불러온다.
+2. 내용을 수정한다.
+
+## Acceptance criteria
+
+- [AC-001] 모든 단계가 복원된다.
+
+## Contracts
+
+- Shared snapshots: \`contracts/api.md\` (api ↔ web)
+`);
+  writeFileSync(join(change, 'WORK_UNITS.yaml'), `schema_version: 1
+change_id: CHG-RESUME-001
+state: draft
+work_units:
+  - id: contract-and-plan
+    repo: root
+    state: in_progress
+    goal: approve
+    branch: change/CHG-RESUME-001/coordination
+    writer: jpyoon
+    write_paths: [changes/CHG-RESUME-001/**]
+    depends_on: []
+    verify: [npm test]
+  - id: api-change
+    goal_id: GOAL-001
+    repo: api
+    state: draft
+    goal: API를 수정한다.
+    branch: feat/CHG-RESUME-001/api-change
+    writer: alice
+    write_paths: [src/api/**]
+    depends_on: [contract-and-plan]
+    verify: []
+  - id: candidate-integration
+    repo: root
+    state: draft
+    goal: integrate
+    branch: change/CHG-RESUME-001/candidate-integration
+    writer: jpyoon
+    write_paths: [changes/CHG-RESUME-001/**]
+    depends_on: [api-change]
+    verify: [npm test]
+`);
+  writeFileSync(join(change, 'contracts/api.md'), '# API contract\n');
+
+  await page.goto(origin);
+  await expect(page.getByText('CHG-RESUME-001 초안을 불러왔습니다.')).toBeVisible();
+  await expect(page.getByLabel('계획 ID').first()).toHaveValue('CHG-RESUME-001');
+  await expect(page.getByLabel('목표 제목')).toHaveValue('계획 이어쓰기');
+  await page.getByRole('button', { name: '2단계 범위와 완료 기준' }).click();
+  await expect(page.getByRole('checkbox', { name: 'api', exact: true })).toBeChecked();
+  await expect(page.getByRole('textbox', { name: '완료 기준 필수' })).toHaveValue('모든 단계가 복원된다.');
+  await page.getByRole('button', { name: '3단계 작업 나누기' }).click();
+  await expect(page.getByLabel('이 작업의 목표')).toHaveValue('API를 수정한다.');
+  await expect(page.getByLabel('담당자')).toHaveValue('alice');
+  await expect(page.getByRole('textbox', { name: '수정 경로 1', exact: true })).toHaveValue('src/api/**');
+  await page.getByRole('button', { name: '4단계 서비스 간 계약' }).click();
+  await expect(page.getByLabel('계약 파일 이름')).toHaveValue('api.md');
+  await expect(page.getByLabel('계약 내용')).toHaveValue('# API contract\n');
+  await expect(page.getByLabel('api 계약 참여')).toBeChecked();
+  await expect(page.getByLabel('web 계약 참여')).toBeChecked();
+  await page.getByRole('button', { name: '1단계 목표 정하기' }).click();
+  await page.getByLabel('계획 제목').fill('새로 수정한 제목');
+  await page.getByRole('button', { name: '2단계 범위와 완료 기준' }).click();
+  await page.getByRole('button', { name: '서비스 목록 새로고침' }).click();
+  await page.getByRole('button', { name: '1단계 목표 정하기' }).click();
+  await expect(page.getByLabel('계획 제목')).toHaveValue('새로 수정한 제목');
+});
+
 test('generated goal IDs stay stable after deletion', async ({ page }) => {
   await page.goto(origin);
   await page.getByRole('button', { name: '목표 추가' }).click();
@@ -328,4 +428,107 @@ test('mobile navigation keeps accessible names and does not overflow', async ({ 
     client: document.documentElement.clientWidth,
   }));
   assert.equal(widths.scroll, widths.client);
+});
+
+test('an approved plan is published through the planning PR panel', async ({ page }) => {
+  const change = 'CHG-PUBLISH-001';
+  const branch = `change/${change}/coordination`;
+  const mergeSha = 'f'.repeat(40);
+  const planPr = {
+    preflight: (input) => ({
+      change: input,
+      branch,
+      host: 'github.com',
+      approval: 'approved',
+      currentBranch: 'main',
+      pendingPaths: [`changes/${input}/PLAN.md`],
+      committed: false,
+      branchExists: false,
+      remoteBranchExists: false,
+      gh: { installed: true, authenticated: true },
+      blockers: [],
+      ready: true,
+      steps: [`git switch -c ${branch} origin/main`, `gh pr create --base main --head ${branch}`],
+    }),
+    execute: (input) => {
+      recordPrNumber(root, input, 42, 'd'.repeat(40));
+      return {
+        change: input,
+        branch,
+        prNumber: 42,
+        prUrl: 'https://github.com/acme/root/pull/42',
+        headSha: 'd'.repeat(40),
+        steps: [{ label: 'PR 생성', command: 'gh pr create', exitCode: 0 }],
+      };
+    },
+    status: (input, number) => ({
+      change: input,
+      number,
+      state: 'MERGED',
+      url: 'https://github.com/acme/root/pull/42',
+      reviewDecision: 'APPROVED',
+      mergeSha,
+      fetched: true,
+    }),
+    candidates: (input) => ({ change: input, ref: 'origin/main', candidates: [] }),
+  };
+  const publishServer = createOrchestrationServer({
+    root,
+    uiRoot: join(import.meta.dirname, '../ui'),
+    planPr,
+    token: 'e2e-token',
+  });
+  await new Promise((resolvePromise) => publishServer.listen(0, '127.0.0.1', resolvePromise));
+  const publishOrigin = `http://127.0.0.1:${publishServer.address().port}`;
+
+  try {
+    await page.goto(`${publishOrigin}/#token=e2e-token`);
+    await page.getByLabel('계획 ID').first().fill(change);
+    await page.getByLabel('계획 제목').fill('계획 공개 흐름');
+    await page.getByLabel('계획 진행자').fill('jpyoon');
+    await page.getByLabel('목표 제목').fill('계획 승인 자동화');
+    await page.getByLabel('기대 결과').fill('승인 값과 계획 PR을 UI에서 처리한다.');
+    await page.getByRole('button', { name: '다음' }).click();
+    await page.getByLabel('제외 범위 없음').check();
+    await page.getByRole('textbox', { name: '완료 기준 필수' }).fill('계획 PR이 열린다.');
+    await page.getByRole('checkbox', { name: 'api', exact: true }).check();
+    await page.getByRole('button', { name: '다음' }).click();
+    await page.getByRole('button', { name: '작업 추가' }).click();
+    await page.getByLabel('연결 목표').selectOption('GOAL-001');
+    await page.getByRole('combobox', { name: '서비스', exact: true }).selectOption('api');
+    await page.getByLabel('이 작업의 목표').fill('API 변경을 구현한다.');
+    await page.getByLabel('담당자').fill('alice');
+    await page.getByRole('textbox', { name: '수정 경로 1', exact: true }).fill('src/api/**');
+    await page.getByRole('button', { name: '다음' }).click();
+    await page.getByRole('button', { name: '다음' }).click();
+    await page.getByRole('button', { name: '계획 검토하기' }).click();
+    await expect(page.locator('#validation-summary')).toContainText('검사 통과');
+    await page.getByRole('button', { name: '계획 초안 저장' }).click();
+    await expect(page.getByText('계획 초안을 저장했습니다.')).toBeVisible();
+
+    await expect(page.locator('#publish')).toBeVisible();
+    await expect(page.locator('[data-approve-state]')).toHaveText('필요');
+    await expect(page.locator('#plan-pr-check')).toBeDisabled();
+
+    await page.getByRole('button', { name: '승인 요청으로 확정' }).click();
+    await expect(page.locator('[data-approve-state]')).toHaveText('완료');
+    assert.equal(YAML.parse(readFileSync(join(root, `changes/${change}/WORK_UNITS.yaml`), 'utf8')).state, 'approved');
+
+    await page.getByRole('button', { name: '실행 전 확인' }).click();
+    await expect(page.locator('#plan-pr-result')).toContainText('계획 브랜치 change/CHG-PUBLISH-001/coordination');
+    await expect(page.locator('#plan-pr-run')).toBeEnabled();
+
+    await page.getByRole('button', { name: '계획 PR 올리기' }).click();
+    await expect(page.locator('#plan-pr-result')).toContainText('PR #42 생성됨');
+    await expect(page.locator('[data-pr-state]')).toHaveText('PR #42');
+
+    await page.getByRole('button', { name: '병합 상태 확인' }).click();
+    await expect(page.locator('#plan-merge-result')).toContainText(mergeSha);
+    await page.getByRole('button', { name: '작업 지시서 만들기' }).last().click();
+    await expect(page.getByRole('dialog', { name: '작업 지시서 만들기' })).toBeVisible();
+    await expect(page.getByLabel('승인된 계획 커밋 SHA')).toHaveValue(mergeSha);
+  } finally {
+    await new Promise((resolvePromise) => publishServer.close(resolvePromise));
+    rmSync(join(root, `changes/${change}`), { recursive: true, force: true });
+  }
 });

@@ -4,7 +4,16 @@ const state = {
   revision: null,
   files: [],
   activeFile: null,
+  token: readToken(),
+  planPr: null,
 };
+
+function readToken() {
+  const match = location.hash.match(/token=([A-Za-z0-9_-]+)/);
+  if (!match) return '';
+  history.replaceState(null, '', `${location.pathname}${location.search}`);
+  return match[1];
+}
 
 const form = document.querySelector('#meeting-form');
 const message = document.querySelector('#message');
@@ -133,10 +142,15 @@ async function request(url, options) {
 }
 
 async function loadStatus() {
+  const hadStatus = Boolean(state.status);
   state.status = await request('/api/status');
   renderServiceChoices();
-  document.querySelectorAll('.unit-card').forEach(refreshUnitServices);
-  document.querySelectorAll('.contract-card').forEach(renderContractServices);
+  renderPublish();
+  if (!hadStatus && state.status.activeDraft) hydrateDraft(state.status.activeDraft);
+  else {
+    document.querySelectorAll('.unit-card').forEach(refreshUnitServices);
+    document.querySelectorAll('.contract-card').forEach(renderContractServices);
+  }
 }
 
 function selectedServices() {
@@ -286,12 +300,14 @@ function refreshGoalIndexes() {
   document.querySelectorAll('.unit-card').forEach(refreshUnitGoals);
 }
 
-function addGoal() {
+function addGoal(value = {}) {
   const card = goalTemplate.content.firstElementChild.cloneNode(true);
   const used = new Set(goalOptions().map(({ id }) => id));
   let sequence = 1;
   while (used.has(`GOAL-${String(sequence).padStart(3, '0')}`)) sequence += 1;
-  card.dataset.goalId = `GOAL-${String(sequence).padStart(3, '0')}`;
+  card.dataset.goalId = value.id || `GOAL-${String(sequence).padStart(3, '0')}`;
+  card.querySelector('[data-goal="title"]').value = value.title ?? '';
+  card.querySelector('[data-goal="outcome"]').value = value.outcome ?? '';
   card.querySelector('.remove').addEventListener('click', () => {
     if (goals.querySelectorAll('.goal-card').length === 1) {
       showMessage('계획에는 목표가 하나 이상 필요합니다.');
@@ -376,10 +392,23 @@ function fullScopeEligible(card) {
   const serviceCards = [...workUnits.querySelectorAll('.unit-card')]
     .filter((candidate) => candidate.querySelector('[data-unit="service"]').value === serviceId);
   const firstForService = serviceCards[0] === card;
-  return Boolean(service?.bootstrapEligible && firstForService);
+  const cardsById = new Map([...workUnits.querySelectorAll('.unit-card')]
+    .map((candidate) => [candidate.dataset.unitId, candidate]));
+  const followsSameServiceWork = (id, seen = new Set()) => {
+    if (seen.has(id)) return false;
+    seen.add(id);
+    const dependency = cardsById.get(id);
+    if (!dependency) return false;
+    if (dependency.querySelector('[data-unit="service"]').value === serviceId) return true;
+    return lines(dependency.querySelector('[data-unit="dependsOn"]').value)
+      .some((dependencyId) => followsSameServiceWork(dependencyId, seen));
+  };
+  const hasSameServicePredecessor = lines(card.querySelector('[data-unit="dependsOn"]').value)
+    .some((id) => followsSameServiceWork(id));
+  return Boolean(service?.bootstrapEligible && firstForService && !hasSameServicePredecessor);
 }
 
-function syncFullScope(card) {
+function syncFullScope(card, { preserveValue = false } = {}) {
   const checkbox = card.querySelector('[data-full-scope]');
   const listNode = card.querySelector('.path-list');
   const addButton = card.querySelector('.add-path');
@@ -392,13 +421,13 @@ function syncFullScope(card) {
   } else {
     listNode.querySelectorAll('[data-path]').forEach((input) => {
       input.disabled = false;
-      if (input.value.trim() === '**') input.value = '';
+      if (!preserveValue && input.value.trim() === '**') input.value = '';
     });
     addButton.hidden = false;
   }
 }
 
-function refreshFullScopeOptions() {
+function refreshFullScopeOptions({ preserveValues = false } = {}) {
   workUnits.querySelectorAll('.unit-card').forEach((card) => {
     const option = card.querySelector('.scope-all-option');
     const checkbox = card.querySelector('[data-full-scope]');
@@ -406,7 +435,7 @@ function refreshFullScopeOptions() {
     option.hidden = !eligible;
     checkbox.disabled = !eligible;
     if (!eligible && checkbox.checked) checkbox.checked = false;
-    syncFullScope(card);
+    syncFullScope(card, { preserveValue: preserveValues });
   });
 }
 
@@ -435,7 +464,7 @@ function addPath(card, value = '') {
   listNode.append(row);
 }
 
-function addUnit() {
+function addUnit(value = {}) {
   workUnits.querySelectorAll('.unit-card').forEach((existing) => setUnitCollapsed(existing, true));
   const card = unitTemplate.content.firstElementChild.cloneNode(true);
   unitPanelSequence += 1;
@@ -467,7 +496,24 @@ function addUnit() {
   workUnits.querySelector('.empty-state')?.remove();
   workUnits.append(card);
   addPath(card);
-  refreshFullScopeOptions();
+  if (value.id) card.dataset.unitId = value.id;
+  card.querySelector('[data-unit="goalId"]').value = value.goalId ?? '';
+  card.querySelector('[data-unit="service"]').value = value.service ?? '';
+  card.querySelector('[data-unit="goal"]').value = value.goal ?? '';
+  card.querySelector('[data-unit="writer"]').value = value.writer ?? '';
+  card.querySelector('[data-unit="dependsOn"]').value = (value.dependsOn ?? []).join('\n');
+  card.querySelector('[data-unit="verify"]').value = (value.verify ?? []).join('\n');
+  const paths = value.writePaths ?? [];
+  if (paths.length) {
+    card.querySelector('[data-path]').value = paths[0];
+    for (const path of paths.slice(1)) addPath(card, path);
+  }
+  refreshFullScopeOptions({ preserveValues: paths.length > 0 });
+  if (paths.length === 1 && paths[0] === '**' && fullScopeEligible(card)) {
+    card.querySelector('[data-full-scope]').checked = true;
+    syncFullScope(card);
+  }
+  updateUnitIdentity(card);
   setUnitCollapsed(card, false);
   card.querySelector('[data-unit="goalId"]').focus();
   invalidatePreview();
@@ -517,7 +563,7 @@ function refreshContractIndexes() {
   });
 }
 
-function addContract() {
+function addContract(value = {}) {
   contracts.querySelectorAll('.contract-card').forEach((existing) => setContractCollapsed(existing, true));
   const card = contractTemplate.content.firstElementChild.cloneNode(true);
   contractPanelSequence += 1;
@@ -559,10 +605,48 @@ function addContract() {
     invalidatePreview();
   });
   contracts.append(card);
+  card.querySelector('[data-contract="name"]').value = value.name ?? '';
+  card.querySelector('[data-contract="content"]').value = value.content ?? '';
+  const selected = new Set(value.serviceIds ?? []);
+  card.querySelectorAll('[data-contract-service]').forEach((input) => { input.checked = selected.has(input.value); });
   refreshContractIndexes();
   setContractCollapsed(card, false);
   card.querySelector('[data-contract="name"]').focus();
   invalidatePreview();
+}
+
+function hydrateDraft(draft) {
+  state.revision = null;
+  form.elements.changeId.value = draft.changeId;
+  form.elements.changeId.readOnly = true;
+  form.elements.title.value = draft.title;
+  form.elements.coordinator.value = draft.coordinator;
+
+  goals.replaceChildren();
+  for (const goal of draft.goals) addGoal(goal);
+
+  form.elements.noNonGoals.checked = draft.noNonGoals;
+  document.querySelector('#non-goals-field').hidden = draft.noNonGoals;
+  form.elements.nonGoals.value = draft.nonGoals.join('\n');
+  form.elements.hasUserFlow.checked = draft.hasUserFlow;
+  document.querySelector('#user-flow-field').hidden = !draft.hasUserFlow;
+  form.elements.userFlow.value = draft.userFlow.join('\n');
+  form.elements.acceptanceCriteria.value = draft.acceptanceCriteria.join('\n');
+  const selected = new Set(draft.services);
+  form.querySelectorAll('[name="services"]').forEach((input) => { input.checked = selected.has(input.value); });
+
+  workUnits.replaceChildren();
+  for (const unit of draft.workUnits) addUnit(unit);
+
+  form.elements.noSharedContract.checked = draft.noSharedContract;
+  document.querySelector('#contract-fields').hidden = draft.noSharedContract;
+  contracts.replaceChildren();
+  for (const contract of draft.contracts) addContract(contract);
+
+  refreshGoalIndexes();
+  refreshFullScopeOptions({ preserveValues: true });
+  showStep(0, { force: true });
+  showMessage(`${draft.changeId} 초안을 불러왔습니다.`, 'success');
 }
 
 function collectDraft() {
@@ -603,6 +687,7 @@ function collectDraft() {
 
 function renderFiles(files) {
   const filePurpose = (path) => {
+    if (path === 'DRAFT.json') return 'UI에서 활성 초안을 손실 없이 다시 불러오기 위한 구조화된 편집 상태입니다.';
     if (path === 'PLAN.md') return '목표와 범위, 완료 기준, 계약을 사람이 검토하는 계획 문서입니다.';
     if (path === 'WORK_UNITS.yaml') return '작업 단위별 저장소, 담당자, 경로, 의존성과 실행 상태를 정의합니다.';
     if (path === 'PRS.yaml') return '작업별 PR 번호와 기준·작업·병합 SHA를 기록하는 추적 문서입니다.';
@@ -770,13 +855,214 @@ async function save() {
     });
     showMessage(`계획 초안을 저장했습니다. 파일 ${result.files.length}개를 만들었습니다. 다음 단계는 계획 PR 검토입니다.`, 'success');
     document.querySelector('#save-guidance').textContent = `저장 완료 · 파일 ${result.files.length}개를 만들었습니다.`;
+    form.elements.changeId.readOnly = true;
     await loadStatus();
+    renderPublish();
   } catch (error) {
     state.revision = null;
     showMessage(error.message);
     document.querySelector('#save-guidance').textContent = `${error.message} 계획 검토를 다시 실행해 주세요.`;
   } finally {
     saveButton.removeAttribute('aria-busy');
+  }
+}
+
+function currentChangeId() {
+  return String(form.elements.changeId.value ?? '').trim().toUpperCase();
+}
+
+function changeSummary() {
+  return state.status?.changeStates?.[currentChangeId()] ?? null;
+}
+
+function publishLines(node, lines) {
+  node.replaceChildren(...lines.map(({ text, kind }) => {
+    const line = document.createElement('p');
+    line.className = kind === 'error' ? 'publish-line is-error' : 'publish-line';
+    line.textContent = text;
+    return line;
+  }));
+}
+
+function commandList(node, commands) {
+  const list = document.createElement('pre');
+  list.className = 'publish-commands';
+  list.textContent = commands.join('\n');
+  node.append(list);
+}
+
+function renderPublish() {
+  const panel = document.querySelector('#publish');
+  const summary = changeSummary();
+  panel.hidden = !summary;
+  if (!summary) return;
+  const approved = ['approved', 'active'].includes(summary.state);
+  const pr = summary.planningPr;
+  document.querySelector('[data-approve-state]').textContent = approved ? '완료' : '필요';
+  document.querySelector('#approve-change').hidden = approved;
+  document.querySelector('[data-pr-state]').textContent = pr ? `PR #${pr.number}` : (approved ? '준비됨' : '대기');
+  document.querySelector('#plan-pr-check').disabled = !approved;
+  const runButton = document.querySelector('#plan-pr-run');
+  runButton.hidden = Boolean(pr);
+  runButton.disabled = !approved || !state.planPr?.ready;
+  document.querySelector('[data-merge-state]').textContent = pr ? '확인 가능' : '대기';
+  document.querySelector('#plan-merge-check').disabled = !pr;
+}
+
+async function approveChange() {
+  const button = document.querySelector('#approve-change');
+  const result = document.querySelector('#approve-result');
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  publishLines(result, [{ text: '승인 값을 기록하고 저장소 규칙을 검사하고 있습니다.' }]);
+  try {
+    const response = await request('/api/changes/approval', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ changeId: currentChangeId() }),
+    });
+    const lines = [{ text: `승인 요청으로 확정했습니다. 발급 가능한 작업 ${response.units.filter(({ state: unitState }) => unitState === 'ready').length}개.` }];
+    for (const unit of response.waiting) lines.push({ text: `${unit.id}: ${unit.reason}` });
+    publishLines(result, lines);
+    showMessage('승인 값을 계획 파일에 기록했습니다. 이제 계획 PR을 올릴 수 있습니다.', 'success');
+    await loadStatus();
+    renderPublish();
+  } catch (error) {
+    const lines = [{ text: error.message, kind: 'error' }];
+    for (const unit of error.body?.units ?? []) lines.push({ text: `${unit.id}: ${unit.reason}`, kind: 'error' });
+    publishLines(result, lines);
+    button.disabled = false;
+  } finally {
+    button.removeAttribute('aria-busy');
+  }
+}
+
+async function checkPlanPr() {
+  const button = document.querySelector('#plan-pr-check');
+  const result = document.querySelector('#plan-pr-result');
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  publishLines(result, [{ text: '저장소 상태를 확인하고 있습니다.' }]);
+  try {
+    const preflight = await request(`/api/plan-pr/preflight?change=${encodeURIComponent(currentChangeId())}`);
+    state.planPr = preflight;
+    const lines = [
+      { text: `현재 브랜치 ${preflight.currentBranch} · 계획 브랜치 ${preflight.branch}` },
+      { text: preflight.pendingPaths.length
+        ? `커밋할 계획 파일 ${preflight.pendingPaths.length}개`
+        : '계획 파일이 이미 커밋되어 있습니다.' },
+      { text: preflight.gh.authenticated ? `gh 인증됨 (${preflight.host})` : `gh 인증 필요 (${preflight.host})` },
+    ];
+    for (const blocker of preflight.blockers) lines.push({ text: blocker.message, kind: 'error' });
+    if (!state.token) lines.push({ text: '접근 토큰이 없습니다. 서버가 출력한 주소로 다시 접속하세요.', kind: 'error' });
+    publishLines(result, lines);
+    commandList(result, preflight.steps);
+    const runButton = document.querySelector('#plan-pr-run');
+    runButton.hidden = false;
+    runButton.disabled = !preflight.ready || !state.token;
+  } catch (error) {
+    state.planPr = null;
+    publishLines(result, [{ text: error.message, kind: 'error' }]);
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+  }
+}
+
+async function runPlanPr() {
+  const button = document.querySelector('#plan-pr-run');
+  const result = document.querySelector('#plan-pr-result');
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  publishLines(result, [{ text: '계획 브랜치를 만들고 PR을 올리는 중입니다.' }]);
+  try {
+    const response = await request('/api/plan-pr', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-coordination-token': state.token },
+      body: JSON.stringify({ changeId: currentChangeId() }),
+    });
+    const lines = response.steps.map((step) => ({ text: `${step.label} · exit ${step.exitCode}` }));
+    lines.push({ text: `PR #${response.prNumber} 생성됨 · 리뷰와 병합은 GitHub에서 진행합니다.` });
+    publishLines(result, lines);
+    if (response.prUrl) {
+      const link = document.createElement('a');
+      link.className = 'publish-link';
+      link.href = response.prUrl;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      link.textContent = response.prUrl;
+      result.append(link);
+    }
+    showMessage(`계획 PR #${response.prNumber}을 올렸습니다. 리뷰어 승인과 병합 후 병합 확인을 누르세요.`, 'success');
+    await loadStatus();
+    renderPublish();
+  } catch (error) {
+    const lines = (error.body?.steps ?? []).map((step) => ({ text: `${step.label} · exit ${step.exitCode}` }));
+    lines.push({ text: error.message, kind: 'error' });
+    publishLines(result, lines);
+    button.disabled = false;
+  } finally {
+    button.removeAttribute('aria-busy');
+  }
+}
+
+async function checkPlanMerge() {
+  const button = document.querySelector('#plan-merge-check');
+  const result = document.querySelector('#plan-merge-result');
+  const summary = changeSummary();
+  if (!summary?.planningPr) return;
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  publishLines(result, [{ text: 'PR 상태를 확인하고 있습니다.' }]);
+  try {
+    const change = currentChangeId();
+    const response = await request(`/api/plan-pr/status?change=${encodeURIComponent(change)}&number=${summary.planningPr.number}`);
+    if (!response.mergeSha) {
+      publishLines(result, [{ text: `PR #${response.number} 상태 ${response.state}${response.reviewDecision ? ` · 리뷰 ${response.reviewDecision}` : ''}. 병합 후 다시 확인하세요.` }]);
+      return;
+    }
+    publishLines(result, [{ text: `병합 완료 · 계획 SHA ${response.mergeSha}` }]);
+    document.querySelector('[data-merge-state]').textContent = '병합됨';
+    const dispatchForm = document.querySelector('#dispatch-form');
+    dispatchForm.elements.dispatchChange.value = change;
+    dispatchForm.elements.planSha.value = response.mergeSha;
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'primary';
+    open.textContent = '작업 지시서 만들기';
+    open.addEventListener('click', () => document.querySelector('#dispatch-dialog').showModal());
+    result.append(open);
+  } catch (error) {
+    publishLines(result, [{ text: error.message, kind: 'error' }]);
+  } finally {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+  }
+}
+
+async function loadPlanCandidates() {
+  const dispatchForm = document.querySelector('#dispatch-form');
+  const change = String(dispatchForm.elements.dispatchChange.value ?? '').trim();
+  const field = document.querySelector('#plan-sha-choice');
+  const select = dispatchForm.elements.planShaChoice;
+  const resultNode = document.querySelector('#dispatch-result');
+  try {
+    const response = await request(`/api/plan-candidates?change=${encodeURIComponent(change)}`);
+    if (!response.candidates.length) {
+      field.hidden = true;
+      resultNode.textContent = `${change} 계획이 아직 ${response.ref}에 병합되지 않았습니다.`;
+      return;
+    }
+    select.replaceChildren(...response.candidates.map((candidate) => new Option(
+      `${candidate.date} · ${candidate.state || '상태 없음'} · ${candidate.subject}`,
+      candidate.sha,
+    )));
+    field.hidden = false;
+    dispatchForm.elements.planSha.value = select.value;
+    resultNode.textContent = `${response.candidates.length}개의 병합 커밋을 찾았습니다.`;
+  } catch (error) {
+    field.hidden = true;
+    resultNode.textContent = error.message;
   }
 }
 
@@ -815,7 +1101,20 @@ function packetForm(unit, change, planSha) {
       const packet = document.createElement('pre');
       packet.setAttribute('aria-label', `${unit.id} 작업 지시서 내용`);
       packet.textContent = result.content;
-      wrapper.append(receipt, packet);
+      const download = document.createElement('a');
+      download.className = 'publish-link';
+      download.href = `/api/packets/${encodeURIComponent(run.value)}`;
+      download.setAttribute('download', `${run.value}.md`);
+      download.textContent = '지시서 내려받기';
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'quiet compact';
+      copy.textContent = '내용 복사';
+      copy.addEventListener('click', async () => {
+        await navigator.clipboard.writeText(result.content);
+        copy.textContent = '복사됨';
+      });
+      wrapper.append(receipt, download, copy, packet);
     } catch (error) {
       button.disabled = !unit.eligible;
       showMessage(error.message);
@@ -892,6 +1191,14 @@ document.querySelector('#refresh-services').addEventListener('click', async ({ c
 });
 document.querySelector('#dispatch-open').addEventListener('click', () => document.querySelector('#dispatch-dialog').showModal());
 document.querySelector('#check-dispatch').addEventListener('click', checkDispatch);
+document.querySelector('#approve-change').addEventListener('click', approveChange);
+document.querySelector('#plan-pr-check').addEventListener('click', checkPlanPr);
+document.querySelector('#plan-pr-run').addEventListener('click', runPlanPr);
+document.querySelector('#plan-merge-check').addEventListener('click', checkPlanMerge);
+document.querySelector('#load-candidates').addEventListener('click', loadPlanCandidates);
+document.querySelector('#dispatch-form').elements.planShaChoice.addEventListener('change', ({ target }) => {
+  document.querySelector('#dispatch-form').elements.planSha.value = target.value;
+});
 form.elements.noNonGoals.addEventListener('change', ({ target }) => {
   document.querySelector('#non-goals-field').hidden = target.checked;
   invalidatePreview();

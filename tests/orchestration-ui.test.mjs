@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,9 +9,11 @@ import test from 'node:test';
 import YAML from 'yaml';
 import {
   buildChangeFiles,
+  recoverChangeWrites,
   saveChange,
   validateDraft,
 } from '../scripts/orchestration/change-service.mjs';
+import { createPlanPr } from '../scripts/orchestration/plan-pr.mjs';
 import { createOrchestrationServer, repositoryContext } from '../scripts/orchestration/server.mjs';
 
 function rootFixture() {
@@ -54,8 +56,8 @@ function serverFixture() {
   return root;
 }
 
-async function withServer(root, callback) {
-  const server = createOrchestrationServer({ root });
+async function withServer(root, callback, options = {}) {
+  const server = createOrchestrationServer({ root, ...options });
   await new Promise((resolvePromise) => server.listen(0, '127.0.0.1', resolvePromise));
   const { port } = server.address();
   try {
@@ -286,6 +288,7 @@ test('build derives branches, base SHAs, inherited checks, and canonical files',
     services: [{ id: 'api', path: 'services/api', verify: ['npm test'], baseSha }],
   });
   assert.deepEqual([...files.keys()].sort(), [
+    'DRAFT.json',
     'PLAN.md',
     'PRS.yaml',
     'STATUS.md',
@@ -324,10 +327,69 @@ test('save writes a complete artifact set and refuses overwrite', () => {
       services: [{ id: 'api', path: 'services/api', verify: ['npm test'], baseSha }],
     });
     const saved = saveChange(root, validDraft.changeId, files);
-    assert.equal(saved.files.length, 6);
+    assert.equal(saved.files.length, 7);
     assert.match(readFileSync(join(root, 'changes/CHG-TEST-001/PLAN.md'), 'utf8'), /계획 회의 산출물/);
     assert.throws(() => saveChange(root, validDraft.changeId, files), /이미 존재/);
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('interrupted draft replacement restores the canonical Change directory', () => {
+  const root = rootFixture();
+  try {
+    const changes = join(root, 'changes');
+    const target = join(changes, 'CHG-RECOVER-001');
+    const backup = join(changes, '_ui-backup-CHG-RECOVER-001-1-1');
+    const staging = join(changes, '_ui-CHG-RECOVER-001-1-1');
+    mkdirSync(backup, { recursive: true });
+    mkdirSync(staging, { recursive: true });
+    writeFileSync(join(backup, 'WORK_UNITS.yaml'), 'state: draft\n');
+    writeFileSync(join(staging, 'WORK_UNITS.yaml'), 'state: draft\nchanged: true\n');
+    writeFileSync(join(changes, '_ui-transaction-1-1.json'), JSON.stringify({
+      target: 'CHG-RECOVER-001',
+      backup: '_ui-backup-CHG-RECOVER-001-1-1',
+      staging: '_ui-CHG-RECOVER-001-1-1',
+    }));
+
+    recoverChangeWrites(root);
+    assert.equal(readFileSync(join(target, 'WORK_UNITS.yaml'), 'utf8'), 'state: draft\n');
+    assert.equal(existsSync(backup), false);
+    assert.equal(existsSync(staging), false);
+    assert.equal(existsSync(join(changes, '_ui-transaction-1-1.json')), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('draft replacement refuses generated-file symlinks and forged recovery markers', () => {
+  const root = rootFixture();
+  const external = join(tmpdir(), `coord-external-${process.pid}-${Date.now()}.md`);
+  try {
+    const files = buildChangeFiles(validDraft, {
+      rootHead: 'b'.repeat(40),
+      services: [{ id: 'api', path: 'services/api', verify: [], baseSha }],
+    });
+    saveChange(root, validDraft.changeId, files);
+    writeFileSync(external, 'outside\n');
+    rmSync(join(root, 'changes/CHG-TEST-001/PLAN.md'));
+    symlinkSync(external, join(root, 'changes/CHG-TEST-001/PLAN.md'));
+    assert.throws(() => saveChange(root, validDraft.changeId, files, { replaceDraft: true }), /심볼릭 링크/);
+    assert.equal(readFileSync(external, 'utf8'), 'outside\n');
+
+    const changes = join(root, 'changes');
+    mkdirSync(join(changes, 'CHG-VICTIM-A'), { recursive: true });
+    mkdirSync(join(changes, 'CHG-VICTIM-B'), { recursive: true });
+    writeFileSync(join(changes, '_ui-transaction-1-2.json'), JSON.stringify({
+      target: 'CHG-VICTIM-A',
+      staging: 'CHG-VICTIM-B',
+      backup: 'CHG-VICTIM-B',
+    }));
+    assert.throws(() => recoverChangeWrites(root), /손상된 Change 저장 복구 정보/);
+    assert.equal(existsSync(join(changes, 'CHG-VICTIM-A')), true);
+    assert.equal(existsSync(join(changes, 'CHG-VICTIM-B')), true);
+  } finally {
+    rmSync(external, { force: true });
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -572,6 +634,248 @@ test('server reports repository state and registered service bases', async () =>
   }
 });
 
+test('repository context exposes the single structured draft as the active Change', () => {
+  const root = serverFixture();
+  try {
+    const change = join(root, 'changes/CHG-RESUME-001');
+    mkdirSync(join(change, 'contracts'), { recursive: true });
+    writeFileSync(join(change, 'PLAN.md'), `# CHG-RESUME-001 — 이어서 작성할 계획
+
+## State
+
+- Status: DRAFT
+- Coordinator: jpyoon
+
+## Goals
+
+### GOAL-001 — 계획 이어쓰기
+
+저장된 내용을 다시 편집한다.
+
+## Non-goals
+
+- 배포는 하지 않는다.
+
+## User flow
+
+1. 초안을 불러온다.
+2. 내용을 수정한다.
+
+## Acceptance criteria
+
+- [AC-001] 모든 단계가 복원된다.
+
+## Contracts
+
+- Shared snapshots: \`contracts/api.md\` (api ↔ web)
+`);
+    writeFileSync(join(change, 'WORK_UNITS.yaml'), `schema_version: 1
+change_id: CHG-RESUME-001
+state: draft
+work_units:
+  - id: contract-and-plan
+    repo: root
+    state: in_progress
+    goal: approve
+    branch: change/CHG-RESUME-001/coordination
+    writer: jpyoon
+    write_paths: [changes/CHG-RESUME-001/**]
+    depends_on: []
+    verify: [npm test]
+  - id: api-change
+    goal_id: GOAL-001
+    repo: api
+    state: draft
+    goal: API를 수정한다.
+    branch: feat/CHG-RESUME-001/api-change
+    writer: alice
+    write_paths: [src/api/**]
+    depends_on: [contract-and-plan]
+    verify: []
+  - id: candidate-integration
+    repo: root
+    state: draft
+    goal: integrate
+    branch: change/CHG-RESUME-001/candidate-integration
+    writer: jpyoon
+    write_paths: [changes/CHG-RESUME-001/**]
+    depends_on: [api-change]
+    verify: [npm test]
+`);
+    writeFileSync(join(change, 'contracts/api.md'), '# API contract\n');
+
+    const context = repositoryContext(root);
+    assert.equal(context.activeDraft.changeId, 'CHG-RESUME-001');
+    assert.deepEqual(context.activeDraft.goals, [{ id: 'GOAL-001', title: '계획 이어쓰기', outcome: '저장된 내용을 다시 편집한다.' }]);
+    assert.deepEqual(context.activeDraft.nonGoals, ['배포는 하지 않는다.']);
+    assert.deepEqual(context.activeDraft.userFlow, ['초안을 불러온다.', '내용을 수정한다.']);
+    assert.deepEqual(context.activeDraft.acceptanceCriteria, ['모든 단계가 복원된다.']);
+    assert.deepEqual(context.activeDraft.services, ['api', 'web']);
+    assert.deepEqual(context.activeDraft.workUnits[0], {
+      id: 'api-change', goalId: 'GOAL-001', service: 'api', goal: 'API를 수정한다.', writer: 'alice',
+      writePaths: ['src/api/**'], dependsOn: [], verify: [],
+    });
+    assert.deepEqual(context.activeDraft.contracts, [{ name: 'api.md', content: '# API contract\n', serviceIds: ['api', 'web'] }]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('structured draft state round-trips Markdown-shaped content without parsing loss', () => {
+  const root = serverFixture();
+  try {
+    const context = repositoryContext(root);
+    const draft = {
+      ...validDraft,
+      goals: [{ id: 'GOAL-001', title: '문서 보존', outcome: '첫 문단\n\n## Details\n\n둘째 문단' }],
+      nonGoals: ['첫 줄\n둘째 줄'],
+    };
+    saveChange(root, draft.changeId, buildChangeFiles(draft, {
+      rootHead: context.head,
+      services: context.services,
+    }));
+    const restored = repositoryContext(root).activeDraft;
+    assert.equal(restored.goals[0].outcome, draft.goals[0].outcome);
+    assert.deepEqual(restored.nonGoals, ['첫 줄', '둘째 줄']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('legacy draft loading rejects a declared contract whose snapshot is missing', () => {
+  const root = serverFixture();
+  try {
+    const change = join(root, 'changes/CHG-MISSING-CONTRACT');
+    mkdirSync(change, { recursive: true });
+    writeFileSync(join(change, 'PLAN.md'), `# CHG-MISSING-CONTRACT — 계약 확인
+
+## State
+
+- Status: DRAFT
+- Coordinator: jpyoon
+
+## Goals
+
+### GOAL-001 — 계약 확인
+
+계약을 복원한다.
+
+## Non-goals
+
+- None declared for this Change.
+
+## Acceptance criteria
+
+- [AC-001] 계약이 존재한다.
+
+## Contracts
+
+- Shared snapshots: \`contracts/api.md\` (api ↔ web)
+`);
+    writeFileSync(join(change, 'WORK_UNITS.yaml'), 'schema_version: 1\nchange_id: CHG-MISSING-CONTRACT\nstate: draft\nwork_units: []\n');
+    assert.throws(() => repositoryContext(root), /계약 파일 contracts\/api\.md을 찾을 수 없습니다/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('structured draft loading rejects a missing contract snapshot', () => {
+  const root = serverFixture();
+  try {
+    const context = repositoryContext(root);
+    saveChange(root, validDraft.changeId, buildChangeFiles(validDraft, {
+      rootHead: context.head,
+      services: context.services,
+    }));
+    const draftPath = join(root, 'changes/CHG-TEST-001/DRAFT.json');
+    const draft = JSON.parse(readFileSync(draftPath, 'utf8'));
+    draft.contracts = [{ name: 'missing.md', content: '# Missing', serviceIds: ['api', 'web'] }];
+    draft.noSharedContract = false;
+    writeFileSync(draftPath, JSON.stringify(draft));
+    assert.throws(() => repositoryContext(root), /계약 파일 contracts\/missing\.md을 찾을 수 없습니다/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('legacy single-goal drafts restore wrapped list content', () => {
+  const root = serverFixture();
+  try {
+    const change = join(root, 'changes/CHG-LEGACY-001');
+    mkdirSync(change, { recursive: true });
+    writeFileSync(join(change, 'PLAN.md'), `# CHG-LEGACY-001 — 단일 목표 계획
+
+## State
+
+- Status: DRAFT
+- Coordinator: jpyoon
+
+## Goal
+
+사용자가 저장된 계획을
+다시 이어서 작성한다.
+
+## Non-goals
+
+- 자동 배포는
+  수행하지 않는다.
+
+## User flow
+
+1. 초안을 열고
+   내용을 확인한다.
+
+## Acceptance criteria
+
+- [AC-001] 입력 내용이
+  손실 없이 복원된다.
+
+## Contracts
+
+- Shared snapshots: none
+`);
+    writeFileSync(join(change, 'WORK_UNITS.yaml'), `schema_version: 1
+change_id: CHG-LEGACY-001
+state: draft
+work_units:
+  - id: api-change
+    repo: api
+    state: draft
+    goal: API를 수정한다.
+    writer: alice
+    write_paths: [src/api/**]
+    depends_on: []
+    verify: []
+`);
+    const draft = repositoryContext(root).activeDraft;
+    assert.deepEqual(draft.goals, [{
+      id: 'GOAL-001',
+      title: '단일 목표 계획',
+      outcome: '사용자가 저장된 계획을\n다시 이어서 작성한다.',
+    }]);
+    assert.deepEqual(draft.nonGoals, ['자동 배포는 수행하지 않는다.']);
+    assert.deepEqual(draft.userFlow, ['초안을 열고 내용을 확인한다.']);
+    assert.deepEqual(draft.acceptanceCriteria, ['입력 내용이 손실 없이 복원된다.']);
+    assert.equal(draft.workUnits[0].goalId, 'GOAL-001');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('repository context rejects multiple draft Changes instead of choosing one', () => {
+  const root = serverFixture();
+  try {
+    for (const id of ['CHG-DRAFT-A', 'CHG-DRAFT-B']) {
+      const change = join(root, `changes/${id}`);
+      mkdirSync(change, { recursive: true });
+      writeFileSync(join(change, 'WORK_UNITS.yaml'), `schema_version: 1\nchange_id: ${id}\nstate: draft\nwork_units: []\n`);
+    }
+    assert.throws(() => repositoryContext(root), /draft Change는 하나만 허용.*CHG-DRAFT-A.*CHG-DRAFT-B/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('service registration API previews a derived service without applying it', async () => {
   const root = serverFixture();
   try {
@@ -749,6 +1053,71 @@ test('preview is non-mutating and save requires its current revision', async () 
   }
 });
 
+test('the active draft can be previewed and atomically updated in place', async () => {
+  const root = serverFixture();
+  try {
+    const context = repositoryContext(root);
+    saveChange(root, validDraft.changeId, buildChangeFiles(validDraft, {
+      rootHead: context.head,
+      services: context.services,
+    }));
+    writeFileSync(join(root, 'changes/CHG-TEST-001/review-notes.md'), 'keep this\n');
+    const draftPath = join(root, 'changes/CHG-TEST-001/DRAFT.json');
+    const savedDraft = JSON.parse(readFileSync(draftPath, 'utf8'));
+    savedDraft.noSharedContract = false;
+    savedDraft.contracts = [{ name: 'obsolete.md', content: '# obsolete', serviceIds: ['api', 'web'] }];
+    writeFileSync(draftPath, JSON.stringify(savedDraft));
+    writeFileSync(join(root, 'changes/CHG-TEST-001/contracts/obsolete.md'), '# obsolete\n');
+    await withServer(root, async (origin) => {
+      const headers = { 'content-type': 'application/json' };
+      const updatedDraft = { ...validDraft, title: '수정한 활성 초안' };
+      const previewResponse = await fetch(`${origin}/api/changes/preview`, {
+        method: 'POST', headers, body: JSON.stringify(updatedDraft),
+      });
+      const previewBody = await previewResponse.text();
+      assert.equal(previewResponse.status, 200, previewBody);
+      const preview = JSON.parse(previewBody);
+      const planPreview = preview.files.find(({ path }) => path === 'PLAN.md');
+      assert.match(planPreview.diff, /^--- a\/changes\/CHG-TEST-001\/PLAN\.md/m);
+      assert.doesNotMatch(planPreview.diff, /--- \/dev\/null/);
+      const saveResponse = await fetch(`${origin}/api/changes`, {
+        method: 'POST', headers, body: JSON.stringify({ draft: updatedDraft, revision: preview.revision }),
+      });
+      const saveBody = await saveResponse.text();
+      assert.equal(saveResponse.status, 200, saveBody);
+      assert.match(readFileSync(join(root, 'changes/CHG-TEST-001/PLAN.md'), 'utf8'), /수정한 활성 초안/);
+      assert.equal(readFileSync(join(root, 'changes/CHG-TEST-001/review-notes.md'), 'utf8'), 'keep this\n');
+      assert.equal(existsSync(join(root, 'changes/CHG-TEST-001/contracts/obsolete.md')), false);
+      assert.equal(existsSync(join(root, 'changes/CHG-TEST-001/contracts/README.md')), true);
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an active draft blocks previewing a different Change ID', async () => {
+  const root = serverFixture();
+  try {
+    const context = repositoryContext(root);
+    saveChange(root, validDraft.changeId, buildChangeFiles(validDraft, {
+      rootHead: context.head,
+      services: context.services,
+    }));
+    await withServer(root, async (origin) => {
+      const response = await fetch(`${origin}/api/changes/preview`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...validDraft, changeId: 'CHG-OTHER-001' }),
+      });
+      assert.equal(response.status, 422);
+      const result = await response.json();
+      assert.ok(result.errors.some(({ code }) => code === 'ACTIVE_DRAFT_EXISTS'));
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('server rejects non-JSON writes and unknown operations', async () => {
   const root = serverFixture();
   try {
@@ -876,4 +1245,231 @@ test('dispatch rendering treats approved manifest text as text, not HTML', () =>
   const packetFunction = source.slice(source.indexOf('function packetForm'), source.indexOf('async function checkDispatch'));
   assert.doesNotMatch(packetFunction, /innerHTML/);
   assert.match(packetFunction, /textContent = unit\.goal/);
+});
+
+test('approval rewrites the manifest, plan, and status documents', () => {
+  const baseSha = 'c'.repeat(40);
+  const context = { rootHead: 'b'.repeat(40), services: [{ id: 'api', path: 'services/api', verify: ['npm test'], baseSha }] };
+
+  const draftFiles = buildChangeFiles(validDraft, context);
+  assert.equal(YAML.parse(draftFiles.get('WORK_UNITS.yaml')).state, 'draft');
+  assert.match(draftFiles.get('PLAN.md'), /- Status: DRAFT/);
+
+  const approvedFiles = buildChangeFiles(validDraft, { ...context, approval: 'approved' });
+  const manifest = YAML.parse(approvedFiles.get('WORK_UNITS.yaml'));
+  assert.equal(manifest.state, 'approved');
+  assert.equal(manifest.work_units.find(({ repo }) => repo === 'api').state, 'ready');
+  assert.equal(YAML.parse(approvedFiles.get('PRS.yaml')).state, 'approved');
+  assert.match(approvedFiles.get('PLAN.md'), /- Status: APPROVED/);
+  assert.match(approvedFiles.get('STATUS.md'), /\*\*State:\*\* APPROVED/);
+  assert.match(approvedFiles.get('STATUS.md'), /\| `api` \| `GOAL-001` \| `api` \| ready \|/);
+});
+
+function approvalFixture(changeId, { verify = ['npm test'] } = {}) {
+  const root = serverFixture();
+  if (!verify.length) {
+    writeFileSync(join(root, 'services/registry.yaml'), readFileSync(join(root, 'services/registry.yaml'), 'utf8').replace('verify: [npm test]', 'verify: []'));
+  }
+  const context = repositoryContext(root);
+  const files = buildChangeFiles({ ...validDraft, changeId, workUnits: [{ ...validDraft.workUnits[0], verify }] }, {
+    rootHead: context.head,
+    services: context.services.map((service) => ({ ...service, verify: verify.length ? service.verify : [] })),
+  });
+  saveChange(root, changeId, files);
+  return root;
+}
+
+test('approval is blocked while a work unit has no verification command', async () => {
+  const root = approvalFixture('CHG-NOVERIFY-001', { verify: [] });
+  try {
+    await withServer(root, async (origin) => {
+      const response = await fetch(`${origin}/api/changes/approval`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ changeId: 'CHG-NOVERIFY-001' }),
+      });
+      assert.equal(response.status, 422);
+      const body = await response.json();
+      assert.match(body.error, /검증 명령/);
+      assert.deepEqual(body.units.map(({ id }) => id), ['api']);
+      assert.equal(YAML.parse(readFileSync(join(root, 'changes/CHG-NOVERIFY-001/WORK_UNITS.yaml'), 'utf8')).state, 'draft');
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('approval promotes the saved change and reports it through status', async () => {
+  const root = approvalFixture('CHG-APPROVE-001');
+  try {
+    await withServer(root, async (origin) => {
+      const response = await fetch(`${origin}/api/changes/approval`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ changeId: 'CHG-APPROVE-001' }),
+      });
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.state, 'approved');
+      assert.deepEqual(body.units.map(({ state: unitState }) => unitState), ['ready']);
+
+      const manifest = YAML.parse(readFileSync(join(root, 'changes/CHG-APPROVE-001/WORK_UNITS.yaml'), 'utf8'));
+      assert.equal(manifest.state, 'approved');
+
+      const status = await (await fetch(`${origin}/api/status`)).json();
+      assert.equal(status.changeStates['CHG-APPROVE-001'].state, 'approved');
+      assert.equal(status.activeDraft, null);
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function stubRunner(responses = {}) {
+  const calls = [];
+  const run = (command, args) => {
+    const key = `${command} ${args.join(' ')}`;
+    calls.push(key);
+    const match = Object.keys(responses).find((prefix) => key.startsWith(prefix));
+    const value = match ? responses[match] : { status: 0, stdout: '' };
+    return { command, args, status: value.status ?? 0, stdout: value.stdout ?? '', stderr: value.stderr ?? '' };
+  };
+  return { calls, run };
+}
+
+function approvedFixture(changeId) {
+  const root = serverFixture();
+  const context = repositoryContext(root);
+  saveChange(root, changeId, buildChangeFiles({ ...validDraft, changeId }, {
+    rootHead: context.head,
+    services: context.services,
+    approval: 'approved',
+  }));
+  return root;
+}
+
+const planPrResponses = (changeId) => ({
+  'git rev-parse --verify origin/main': { status: 0, stdout: 'origin/main' },
+  'git rev-parse --verify refs/heads/': { status: 1 },
+  'git rev-parse --verify refs/remotes/origin/': { status: 1 },
+  'git branch --show-current': { stdout: 'main' },
+  'git status --porcelain --': { stdout: `?? changes/${changeId}/PLAN.md` },
+  'git cat-file -e HEAD:': { status: 1 },
+  'git diff --cached --name-only': { stdout: `changes/${changeId}/PLAN.md` },
+  'git rev-parse HEAD': { stdout: 'd'.repeat(40) },
+  'gh --version': { stdout: 'gh version 2.0.0' },
+  'gh auth status': { status: 0 },
+  'gh pr list': { stdout: '[]' },
+  'gh pr create': { stdout: 'https://github.com/acme/root/pull/7' },
+});
+
+test('planning PR preflight blocks an unapproved change', async () => {
+  const root = approvalFixture('CHG-PREFLIGHT-001');
+  try {
+    const { run } = stubRunner(planPrResponses('CHG-PREFLIGHT-001'));
+    const planPr = createPlanPr({ root, run });
+    await withServer(root, async (origin) => {
+      const response = await fetch(`${origin}/api/plan-pr/preflight?change=CHG-PREFLIGHT-001`);
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.ready, false);
+      assert.deepEqual(body.blockers.map(({ code }) => code), ['NOT_APPROVED']);
+    }, { planPr });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('planning PR creation requires the server access token', async () => {
+  const root = approvedFixture('CHG-TOKEN-001');
+  try {
+    const { calls, run } = stubRunner(planPrResponses('CHG-TOKEN-001'));
+    const planPr = createPlanPr({ root, run });
+    await withServer(root, async (origin) => {
+      const denied = await fetch(`${origin}/api/plan-pr`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ changeId: 'CHG-TOKEN-001' }),
+      });
+      assert.equal(denied.status, 403);
+      assert.deepEqual(calls, []);
+    }, { planPr, token: 'test-token' });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('planning PR creation commits only the change directory and never merges', async () => {
+  const root = approvedFixture('CHG-PR-001');
+  try {
+    const { calls, run } = stubRunner(planPrResponses('CHG-PR-001'));
+    const planPr = createPlanPr({ root, run });
+    await withServer(root, async (origin) => {
+      const response = await fetch(`${origin}/api/plan-pr`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-coordination-token': 'test-token' },
+        body: JSON.stringify({ changeId: 'CHG-PR-001' }),
+      });
+      assert.equal(response.status, 201);
+      const body = await response.json();
+      assert.equal(body.prNumber, 7);
+      assert.equal(body.branch, 'change/CHG-PR-001/coordination');
+
+      assert.ok(calls.some((call) => call.startsWith('git switch -c change/CHG-PR-001/coordination origin/main')));
+      assert.ok(calls.some((call) => call.includes('git commit -m plan(CHG-PR-001)') && call.endsWith('-- changes/CHG-PR-001')));
+      assert.ok(calls.includes('git push -u origin change/CHG-PR-001/coordination'));
+      assert.equal(calls.some((call) => call.startsWith('gh pr merge')), false);
+      assert.equal(calls.some((call) => call.includes('--force')), false);
+      assert.equal(calls.some((call) => /git push \S+ origin main/.test(call) || call === 'git push origin main'), false);
+
+      const prs = YAML.parse(readFileSync(join(root, 'changes/CHG-PR-001/PRS.yaml'), 'utf8'));
+      const planningRow = prs.prs.find(({ work_unit: unit }) => unit === 'contract-and-plan');
+      assert.equal(planningRow.number, 7);
+      assert.equal(planningRow.state, 'open');
+      assert.ok(calls.some((call) => call.includes('record planning PR #7')));
+    }, { planPr, token: 'test-token' });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('merged plan candidates are listed with their recorded state', async () => {
+  const root = approvedFixture('CHG-CAND-001');
+  try {
+    const { run } = stubRunner({
+      'git rev-parse --verify origin/main': { status: 0, stdout: 'origin/main' },
+      'git log': { stdout: `${'e'.repeat(40)}\t2026-10-02\tplan(CHG-CAND-001): merge` },
+      'git show': { stdout: 'schema_version: 1\nstate: approved\n' },
+    });
+    const planPr = createPlanPr({ root, run });
+    await withServer(root, async (origin) => {
+      const body = await (await fetch(`${origin}/api/plan-candidates?change=CHG-CAND-001`)).json();
+      assert.deepEqual(body.candidates, [{
+        sha: 'e'.repeat(40),
+        date: '2026-10-02',
+        subject: 'plan(CHG-CAND-001): merge',
+        state: 'approved',
+        dispatchable: true,
+      }]);
+    }, { planPr });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('dispatch names the changes present in the supplied plan commit', async () => {
+  const root = approvedFixture('CHG-PRESENT-001');
+  try {
+    execFileSync('git', ['add', 'changes'], { cwd: root });
+    execFileSync('git', ['commit', '-qm', 'plan(CHG-PRESENT-001): add'], { cwd: root });
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    await withServer(root, async (origin) => {
+      const response = await fetch(`${origin}/api/dispatch?change=CHG-OTHER-001&planSha=${sha}`);
+      assert.equal(response.status, 422);
+      const body = await response.json();
+      assert.match(body.error, /CHG-PRESENT-001/);
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

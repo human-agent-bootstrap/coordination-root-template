@@ -188,6 +188,13 @@ try {
     }
   }
 
+  const draftChanges = manifests
+    .filter(({ manifest }) => String(manifest.state ?? '').toLowerCase() === 'draft')
+    .map(({ change }) => change);
+  if (draftChanges.length > 1) {
+    problems.push(`only one draft Change is allowed: ${draftChanges.join(', ')}`);
+  }
+
   const active = manifests.flatMap(({ change, units }) => {
     const ordered = orderedPairs(units);
     return units

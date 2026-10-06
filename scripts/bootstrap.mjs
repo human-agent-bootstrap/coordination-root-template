@@ -1,9 +1,8 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import {
   fail,
-  isFullSha,
   isPlanningUnit,
   parseArgs,
   readAtRef,
@@ -12,6 +11,8 @@ import {
   required,
   safeIdentifier,
   sha256,
+  validatePlanSha,
+  verifyCommandsFor,
   writeText,
 } from './lib.mjs';
 
@@ -21,17 +22,6 @@ function git(args) {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
-}
-
-function validatePlanSha(planSha) {
-  if (!isFullSha(planSha)) throw new Error(`invalid --plan-sha: expected a full 40-character commit SHA, got ${planSha}`);
-  const commit = spawnSync('git', ['cat-file', '-e', `${planSha}^{commit}`], { cwd: process.cwd() });
-  if (commit.status !== 0) throw new Error(`plan SHA is not available locally: ${planSha}`);
-  const approvedRef = spawnSync('git', ['rev-parse', '--verify', 'origin/main'], { cwd: process.cwd() }).status === 0
-    ? 'origin/main'
-    : 'main';
-  const reachable = spawnSync('git', ['merge-base', '--is-ancestor', planSha, approvedRef], { cwd: process.cwd() });
-  if (reachable.status !== 0) throw new Error(`plan SHA ${planSha} is not reachable from ${approvedRef}`);
 }
 
 function contractSnapshots(changeId, planSha) {
@@ -56,14 +46,13 @@ function contractSnapshots(changeId, planSha) {
 }
 
 function verifyCommands(unit, planSha) {
-  if (unit.verify.length) return { commands: unit.verify, source: 'work unit' };
+  let services = [];
   try {
-    const service = readRegistry(planSha).services.find((entry) => entry.id === String(unit.repo));
-    if (service?.verify?.length) return { commands: service.verify, source: 'service registry' };
+    services = readRegistry(planSha).services;
   } catch {
     // A missing or invalid registry is reported by verify-registry.mjs, not here.
   }
-  return { commands: [], source: 'none declared' };
+  return verifyCommandsFor(unit, services);
 }
 
 try {
@@ -128,7 +117,7 @@ try {
     ...unit.write_paths.map((path) => `  - ${path}`),
     '',
     '# CONTRACT',
-    '- Read AGENTS.md in the Root repository before implementation.',
+    '- Read AGENTS.md and WRITER.md in the Root repository before implementation.',
     ...(contracts.length
       ? ['- Approved contract snapshots (do not modify):', ...contracts.map(({ path, digest }) => `  - ${path} (sha256:${digest})`)]
       : ['- This change declares no contract snapshot. Stop and ask before assuming any cross-service interface.']),

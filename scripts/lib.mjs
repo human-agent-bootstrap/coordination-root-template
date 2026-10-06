@@ -1,8 +1,41 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import YAML from 'yaml';
+
+export function defaultRun(command, args, options = {}) {
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 600_000, ...options });
+  return {
+    command,
+    args,
+    status: result.error ? -1 : result.status ?? -1,
+    stdout: (result.stdout ?? '').replace(/\s+$/, ''),
+    stderr: (result.stderr ?? result.error?.message ?? '').trim(),
+  };
+}
+
+// The approved plan version is a commit reachable from the integration branch.
+// Both bootstrap and the writer CLI gate on this before trusting a packet.
+export function validatePlanSha(planSha, { cwd = process.cwd(), run = defaultRun } = {}) {
+  if (!isFullSha(planSha)) throw new Error(`invalid --plan-sha: expected a full 40-character commit SHA, got ${planSha}`);
+  if (run('git', ['cat-file', '-e', `${planSha}^{commit}`], { cwd }).status !== 0) {
+    throw new Error(`plan SHA is not available locally: ${planSha}`);
+  }
+  const approvedRef = run('git', ['rev-parse', '--verify', 'origin/main'], { cwd }).status === 0 ? 'origin/main' : 'main';
+  if (run('git', ['merge-base', '--is-ancestor', planSha, approvedRef], { cwd }).status !== 0) {
+    throw new Error(`plan SHA ${planSha} is not reachable from ${approvedRef}`);
+  }
+  return approvedRef;
+}
+
+// A work unit declares its own checks; otherwise the service registry supplies them.
+export function verifyCommandsFor(unit, services = []) {
+  if (unit?.verify?.length) return { commands: unit.verify, source: 'work unit' };
+  const service = services.find((entry) => entry.id === String(unit?.repo));
+  if (service?.verify?.length) return { commands: service.verify, source: 'service registry' };
+  return { commands: [], source: 'none declared' };
+}
 
 export function fail(message) {
   process.stderr.write(`ERROR: ${message}\n`);
@@ -11,6 +44,7 @@ export function fail(message) {
 
 const BOOLEAN_FLAGS = new Set([
   'apply',
+  'allow-failing-checks',
   'allow-descendant',
   'allow-uninitialized',
   'strict',

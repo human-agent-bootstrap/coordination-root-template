@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import YAML from 'yaml';
 
@@ -14,7 +14,9 @@ function text(value) {
 }
 
 function list(value) {
-  return Array.isArray(value) ? value.map(text).filter(Boolean) : [];
+  return Array.isArray(value)
+    ? value.flatMap((item) => String(item ?? '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean))
+    : [];
 }
 
 function slug(value, fallback = 'work') {
@@ -266,17 +268,18 @@ function yaml(value) {
   return YAML.stringify(value, { lineWidth: 0 });
 }
 
-function planMarkdown(draft, rootHead) {
+function planMarkdown(draft, rootHead, approval) {
   const goalLines = draft.goals.map((goal) => `### ${goal.id} — ${goal.title}\n\n${goal.outcome}`).join('\n\n');
   const nonGoals = draft.noNonGoals ? '- None declared for this Change.' : draft.nonGoals.map((item) => `- ${item}`).join('\n');
   const userFlow = draft.hasUserFlow ? `\n\n## User flow\n\n${draft.userFlow.map((item, index) => `${index + 1}. ${item}`).join('\n')}` : '';
   const contractSummary = draft.noSharedContract ? 'none' : draft.contracts.map(({ name, serviceIds }) => `\`contracts/${name}\` (${serviceIds.join(' ↔ ')})`).join(', ');
-  return `# ${draft.changeId} — ${draft.title}\n\n## State\n\n- Status: DRAFT\n- Coordinator: ${draft.coordinator}\n- Required approvers: product owner, service owner, independent reviewer\n- Plan base: ${rootHead}\n- Tracking: none\n\n## Goals\n\n${goalLines}\n\n## Non-goals\n\n${nonGoals}${userFlow}\n\n## Acceptance criteria\n\n${draft.acceptanceCriteria.map((item, index) => `- [AC-${String(index + 1).padStart(3, '0')}] ${item}`).join('\n')}\n\n## Contracts\n\n- Shared snapshots: ${contractSummary}\n- Compatibility/migration: none unless explicitly stated in a contract snapshot\n\n## Order\n\n- Merge order: dependency order recorded in WORK_UNITS.yaml\n- Deploy order: decided during Candidate integration\n- Activation: none unless added by an approved plan amendment\n\n## Risks\n\n- Concurrent path ownership or contract ambiguity blocks approval readiness.\n\n## Rollback\n\n| Item | Plan |\n|---|---|\n| Trigger | An acceptance criterion or approved contract cannot be satisfied |\n| Owner | Coordinator and affected service owner |\n| Kill switch | Defined before deployment when applicable |\n| Code recovery | Revert or roll forward from exact merge SHAs |\n| Data recovery | Not applicable unless added by an approved plan amendment |\n| Verification | Re-run all declared checks and Candidate verification |\n\n## Stop conditions\n\n- A contract, scope, base SHA, dependency, or required verification must change.\n- Secret, production, destructive, or undeclared repository access is required.\n`;
+  return `# ${draft.changeId} — ${draft.title}\n\n## State\n\n- Status: ${approval === 'approved' ? 'APPROVED' : 'DRAFT'}\n- Coordinator: ${draft.coordinator}\n- Required approvers: product owner, service owner, independent reviewer\n- Plan base: ${rootHead}\n- Tracking: none\n\n## Goals\n\n${goalLines}\n\n## Non-goals\n\n${nonGoals}${userFlow}\n\n## Acceptance criteria\n\n${draft.acceptanceCriteria.map((item, index) => `- [AC-${String(index + 1).padStart(3, '0')}] ${item}`).join('\n')}\n\n## Contracts\n\n- Shared snapshots: ${contractSummary}\n- Compatibility/migration: none unless explicitly stated in a contract snapshot\n\n## Order\n\n- Merge order: dependency order recorded in WORK_UNITS.yaml\n- Deploy order: decided during Candidate integration\n- Activation: none unless added by an approved plan amendment\n\n## Risks\n\n- Concurrent path ownership or contract ambiguity blocks approval readiness.\n\n## Rollback\n\n| Item | Plan |\n|---|---|\n| Trigger | An acceptance criterion or approved contract cannot be satisfied |\n| Owner | Coordinator and affected service owner |\n| Kill switch | Defined before deployment when applicable |\n| Code recovery | Revert or roll forward from exact merge SHAs |\n| Data recovery | Not applicable unless added by an approved plan amendment |\n| Verification | Re-run all declared checks and Candidate verification |\n\n## Stop conditions\n\n- A contract, scope, base SHA, dependency, or required verification must change.\n- Secret, production, destructive, or undeclared repository access is required.\n`;
 }
 
 export function buildChangeFiles(input, context) {
   const { valid, errors, draft } = validateDraft(input, context);
   if (!valid) throw new Error(errors.map(({ message }) => message).join('\n'));
+  const approval = context.approval === 'approved' ? 'approved' : 'draft';
   const rootHead = context.rootHead;
   const serviceById = new Map(context.services.map((service) => [service.id, service]));
   const implementationUnits = draft.workUnits.map((unit) => {
@@ -297,12 +300,17 @@ export function buildChangeFiles(input, context) {
     };
   });
   const serviceIds = [...new Set(draft.workUnits.map((unit) => unit.service))];
+  const unitStates = new Map(implementationUnits.map((unit) => [
+    unit.id,
+    unit.verify.length && unit.depends_on.every((id) => id === 'contract-and-plan') ? 'ready' : 'draft',
+  ]));
   const files = new Map();
-  files.set('PLAN.md', planMarkdown(draft, rootHead));
+  files.set('PLAN.md', planMarkdown(draft, rootHead, approval));
+  files.set('DRAFT.json', `${JSON.stringify(draft, null, 2)}\n`);
   files.set('WORK_UNITS.yaml', yaml({
     schema_version: 1,
     change_id: draft.changeId,
-    state: 'draft',
+    state: approval,
     plan_base_sha: rootHead,
     plan_merge_sha: 'pending',
     work_units: [
@@ -313,10 +321,7 @@ export function buildChangeFiles(input, context) {
         write_paths: [`changes/${draft.changeId}/**`], depends_on: [],
         verify: ['npm test', `npm run verify:registry -- --change ${draft.changeId} --strict`],
       },
-      ...implementationUnits.map((unit) => ({
-        ...unit,
-        state: unit.verify.length && unit.depends_on.every((id) => id === 'contract-and-plan') ? 'ready' : 'draft',
-      })),
+      ...implementationUnits.map((unit) => ({ ...unit, state: unitStates.get(unit.id) })),
       {
         id: 'candidate-integration', repo: 'root', state: 'draft',
         goal: 'Pin reviewed service merge SHAs and verify the exact candidate.',
@@ -332,16 +337,16 @@ export function buildChangeFiles(input, context) {
     ],
   }));
   files.set('PRS.yaml', yaml({
-    schema_version: 1, change_id: draft.changeId, state: 'draft', plan_merge_sha: 'pending',
+    schema_version: 1, change_id: draft.changeId, state: approval, plan_merge_sha: 'pending',
     prs: [
       { key: 'root-planning', repo: 'root', work_unit: 'contract-and-plan', number: null, state: 'not-started', base_sha: rootHead, head_sha: null, merge_sha: null },
       ...implementationUnits.map((unit) => ({ key: unit.id, repo: unit.repo, work_unit: unit.id, number: null, state: 'not-started', base_sha: unit.base_sha, head_sha: null, merge_sha: null, merge_method: 'squash' })),
       { key: 'root-candidate', repo: 'root', work_unit: 'candidate-integration', number: null, state: 'not-started', base_sha: 'pending-plan-merge', head_sha: null, merge_sha: null },
     ],
   }));
-  const unitRows = implementationUnits.map((unit) => `| \`${unit.id}\` | \`${unit.goal_id}\` | \`${unit.repo}\` | draft | Approved planning merge SHA |`).join('\n');
+  const unitRows = implementationUnits.map((unit) => `| \`${unit.id}\` | \`${unit.goal_id}\` | \`${unit.repo}\` | ${unitStates.get(unit.id)} | Approved planning merge SHA |`).join('\n');
   const scopeSummary = draft.goals.map(({ id, title, outcome }) => `${id} ${title}: ${outcome}`).join(' ');
-  files.set('STATUS.md', `# Status — ${draft.changeId}\n\n**State:** DRAFT\n\n## Scope\n\n${scopeSummary} Non-goals: ${draft.noNonGoals ? 'none' : draft.nonGoals.join(' ')}\n\n## Work units\n\n| Work unit | Goal | Repository | State | Gate |\n|---|---|---|---|---|\n| \`contract-and-plan\` | all | Root | draft | Human plan and contract approval |\n${unitRows}\n| \`candidate-integration\` | all | Root | draft | Service PRs reviewed and human-merged |\n\n## Evidence boundary\n\n- Root base SHA: \`${rootHead}\`\n- Service base SHAs: see \`WORK_UNITS.yaml\`\n- No implementation has started.\n- No implementation agent has been dispatched.\n- No candidate, release, or deployment claim exists yet.\n\n## Next gate\n\nA human reviews and approves the Root planning PR. Its merge SHA becomes the immutable plan version supplied to participating Writers.\n`);
+  files.set('STATUS.md', `# Status — ${draft.changeId}\n\n**State:** ${approval === 'approved' ? 'APPROVED' : 'DRAFT'}\n\n## Scope\n\n${scopeSummary} Non-goals: ${draft.noNonGoals ? 'none' : draft.nonGoals.join(' ')}\n\n## Work units\n\n| Work unit | Goal | Repository | State | Gate |\n|---|---|---|---|---|\n| \`contract-and-plan\` | all | Root | in_progress | Human plan and contract approval |\n${unitRows}\n| \`candidate-integration\` | all | Root | draft | Service PRs reviewed and human-merged |\n\n## Evidence boundary\n\n- Root base SHA: \`${rootHead}\`\n- Service base SHAs: see \`WORK_UNITS.yaml\`\n- No implementation has started.\n- No implementation agent has been dispatched.\n- No candidate, release, or deployment claim exists yet.\n\n## Next gate\n\nA human reviews and approves the Root planning PR. Its merge SHA becomes the immutable plan version supplied to participating Writers.\n`);
   files.set('releases/candidate-001.yaml', yaml({
     schema_version: 1, change_id: draft.changeId, candidate: 1, state: 'draft', plan_sha: 'pending-planning-merge',
     services: serviceIds.map((id) => {
@@ -358,26 +363,168 @@ export function buildChangeFiles(input, context) {
   return files;
 }
 
-export function saveChange(root, changeId, files) {
-  if (!ID_PATTERN.test(changeId)) throw new Error('유효하지 않은 Change ID입니다.');
-  const changesRoot = resolve(root, 'changes');
-  const target = resolve(changesRoot, changeId);
-  if (dirname(target) !== changesRoot) throw new Error('Change 경로가 changes/ 밖을 벗어납니다.');
-  if (existsSync(target)) throw new Error(`Change ${changeId}가 이미 존재합니다.`);
-  const staging = resolve(changesRoot, `_ui-${changeId}-${process.pid}-${Date.now()}`);
-  if (!staging.startsWith(`${changesRoot}${sep}`)) throw new Error('임시 저장 경로가 안전하지 않습니다.');
-  try {
-    for (const [relativePath, content] of files) {
-      if (!pathIsSafe(relativePath)) throw new Error(`안전하지 않은 산출물 경로: ${relativePath}`);
-      const output = resolve(staging, relativePath);
-      if (!output.startsWith(`${staging}${sep}`)) throw new Error(`산출물 경로가 Change 밖을 벗어납니다: ${relativePath}`);
-      mkdirSync(dirname(output), { recursive: true });
-      writeFileSync(output, content, 'utf8');
-    }
-    renameSync(staging, target);
-    return { directory: target, files: [...files.keys()] };
-  } catch (error) {
-    rmSync(staging, { recursive: true, force: true });
-    throw error;
+export function assertPathHasNoSymlinks(root, relativePath) {
+  const resolvedRoot = resolve(root);
+  const target = resolve(resolvedRoot, relativePath);
+  if (target !== resolvedRoot && !target.startsWith(`${resolvedRoot}${sep}`)) throw new Error(`경로가 허용 범위를 벗어납니다: ${relativePath}`);
+  let current = resolvedRoot;
+  for (const part of relativePath.split(/[\\/]/).filter(Boolean)) {
+    current = resolve(current, part);
+    if (existsSync(current) && lstatSync(current).isSymbolicLink()) throw new Error(`심볼릭 링크 경로는 사용할 수 없습니다: ${relativePath}`);
   }
+}
+
+function changeLock(root, callback) {
+  const changesRoot = resolve(root, 'changes');
+  mkdirSync(changesRoot, { recursive: true });
+  const lock = resolve(changesRoot, '.ui-write.lock');
+  const acquire = () => {
+    try {
+      writeFileSync(lock, JSON.stringify({ pid: process.pid }), { encoding: 'utf8', flag: 'wx' });
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+      if (lstatSync(lock).isSymbolicLink()) throw new Error('Change 저장 잠금이 안전하지 않습니다.');
+      let owner;
+      try {
+        owner = JSON.parse(readFileSync(lock, 'utf8'));
+      } catch {
+        throw new Error('Change 저장 잠금이 손상되었습니다.');
+      }
+      if (!Number.isInteger(owner.pid) || owner.pid <= 0) throw new Error('Change 저장 잠금이 손상되었습니다.');
+      try {
+        process.kill(owner.pid, 0);
+        throw new Error('다른 프로세스가 Change를 저장하고 있습니다. 잠시 후 다시 시도하세요.');
+      } catch (processError) {
+        if (processError.code !== 'ESRCH') throw processError;
+      }
+      rmSync(lock, { force: true });
+      writeFileSync(lock, JSON.stringify({ pid: process.pid }), { encoding: 'utf8', flag: 'wx' });
+    }
+  };
+  acquire();
+  try {
+    return callback(changesRoot);
+  } finally {
+    rmSync(lock, { force: true });
+  }
+}
+
+function recoverChangeWritesUnlocked(changesRoot) {
+  const transactions = readdirSync(changesRoot).filter((name) => name.startsWith('_ui-transaction-'));
+  for (const name of transactions) {
+    const markerMatch = name.match(/^_ui-transaction-(\d+)-(\d+)\.json$/);
+    if (!markerMatch) throw new Error(`손상된 Change 저장 복구 정보입니다: ${name}`);
+    const marker = resolve(changesRoot, name);
+    assertPathHasNoSymlinks(changesRoot, name);
+    let transaction;
+    try {
+      transaction = JSON.parse(readFileSync(marker, 'utf8'));
+    } catch {
+      throw new Error(`손상된 Change 저장 복구 정보입니다: ${name}`);
+    }
+    const changeId = String(transaction.target ?? '');
+    if (!ID_PATTERN.test(changeId)) throw new Error(`손상된 Change 저장 복구 정보입니다: ${name}`);
+    const suffix = `${markerMatch[1]}-${markerMatch[2]}`;
+    const expectedStaging = `_ui-${changeId}-${suffix}`;
+    const expectedBackup = `_ui-backup-${changeId}-${suffix}`;
+    if (transaction.staging !== expectedStaging || transaction.backup !== expectedBackup) throw new Error(`손상된 Change 저장 복구 정보입니다: ${name}`);
+    const target = resolve(changesRoot, changeId);
+    const staging = resolve(changesRoot, expectedStaging);
+    const backup = resolve(changesRoot, expectedBackup);
+    for (const path of [target, staging, backup]) assertPathHasNoSymlinks(changesRoot, path.slice(changesRoot.length + 1));
+    if (!existsSync(target) && existsSync(backup)) renameSync(backup, target);
+    if (existsSync(target)) {
+      rmSync(backup, { recursive: true, force: true });
+      rmSync(staging, { recursive: true, force: true });
+      rmSync(marker, { force: true });
+    } else {
+      throw new Error(`Change 저장을 자동 복구할 수 없습니다: ${name}`);
+    }
+  }
+}
+
+export function recoverChangeWrites(root) {
+  const changesRoot = resolve(root, 'changes');
+  if (!existsSync(changesRoot) || !readdirSync(changesRoot).some((name) => name.startsWith('_ui-transaction-'))) return;
+  changeLock(root, () => recoverChangeWritesUnlocked(changesRoot));
+}
+
+export function managedDraftContractPaths(target) {
+  const draftPath = resolve(target, 'DRAFT.json');
+  if (existsSync(draftPath)) {
+    assertPathHasNoSymlinks(target, 'DRAFT.json');
+    try {
+      return list(JSON.parse(readFileSync(draftPath, 'utf8')).contracts?.map(({ name }) => `contracts/${name}`));
+    } catch {
+      throw new Error('기존 DRAFT.json 형식이 올바르지 않습니다.');
+    }
+  }
+  const planPath = resolve(target, 'PLAN.md');
+  if (!existsSync(planPath)) return [];
+  assertPathHasNoSymlinks(target, 'PLAN.md');
+  return [...readFileSync(planPath, 'utf8').matchAll(/`(contracts\/[^`]+)`/g)].map((match) => match[1]);
+}
+
+export function saveChange(root, changeId, files, { replaceDraft = false } = {}) {
+  return changeLock(root, (changesRoot) => {
+    if (!ID_PATTERN.test(changeId)) throw new Error('유효하지 않은 Change ID입니다.');
+    recoverChangeWritesUnlocked(changesRoot);
+    const target = resolve(changesRoot, changeId);
+    if (dirname(target) !== changesRoot) throw new Error('Change 경로가 changes/ 밖을 벗어납니다.');
+    assertPathHasNoSymlinks(changesRoot, changeId);
+    if (existsSync(target) && !replaceDraft) throw new Error(`Change ${changeId}가 이미 존재합니다.`);
+    if (existsSync(target) && replaceDraft) {
+      const manifestPath = resolve(target, 'WORK_UNITS.yaml');
+      assertPathHasNoSymlinks(target, 'WORK_UNITS.yaml');
+      const manifest = existsSync(manifestPath) ? YAML.parse(readFileSync(manifestPath, 'utf8')) : null;
+      if (String(manifest?.state).toLowerCase() !== 'draft') throw new Error(`Change ${changeId}는 draft 상태가 아니어서 덮어쓸 수 없습니다.`);
+    }
+    const suffix = `${process.pid}-${Date.now()}`;
+    const staging = resolve(changesRoot, `_ui-${changeId}-${suffix}`);
+    const backup = resolve(changesRoot, `_ui-backup-${changeId}-${suffix}`);
+    const marker = resolve(changesRoot, `_ui-transaction-${suffix}.json`);
+    const markerPending = resolve(changesRoot, `_ui-marker-${suffix}.tmp`);
+    if (!staging.startsWith(`${changesRoot}${sep}`)) throw new Error('임시 저장 경로가 안전하지 않습니다.');
+    let transactionStarted = false;
+    try {
+      const staleManagedContracts = replaceDraft
+        ? managedDraftContractPaths(target).filter((path) => !files.has(path))
+        : [];
+      if (replaceDraft) cpSync(target, staging, { recursive: true });
+      for (const relativePath of staleManagedContracts) {
+        if (!pathIsSafe(relativePath)) throw new Error(`안전하지 않은 기존 계약 경로: ${relativePath}`);
+        assertPathHasNoSymlinks(staging, relativePath);
+        rmSync(resolve(staging, relativePath), { force: true });
+      }
+      for (const [relativePath, content] of files) {
+        if (!pathIsSafe(relativePath)) throw new Error(`안전하지 않은 산출물 경로: ${relativePath}`);
+        assertPathHasNoSymlinks(staging, relativePath);
+        const output = resolve(staging, relativePath);
+        if (!output.startsWith(`${staging}${sep}`)) throw new Error(`산출물 경로가 Change 밖을 벗어납니다: ${relativePath}`);
+        mkdirSync(dirname(output), { recursive: true });
+        writeFileSync(output, content, 'utf8');
+      }
+      if (!replaceDraft) renameSync(staging, target);
+      else {
+        writeFileSync(markerPending, JSON.stringify({
+          target: basename(target),
+          staging: basename(staging),
+          backup: basename(backup),
+        }), 'utf8');
+        renameSync(markerPending, marker);
+        transactionStarted = true;
+        renameSync(target, backup);
+        renameSync(staging, target);
+        rmSync(backup, { recursive: true, force: true });
+        rmSync(marker, { force: true });
+        transactionStarted = false;
+      }
+      return { directory: target, files: [...files.keys()] };
+    } catch (error) {
+      rmSync(markerPending, { force: true });
+      if (transactionStarted) recoverChangeWritesUnlocked(changesRoot);
+      else rmSync(staging, { recursive: true, force: true });
+      throw error;
+    }
+  });
 }

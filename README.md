@@ -17,14 +17,37 @@ npm ci
 npm run ui
 ```
 
-Open `http://127.0.0.1:4173`. The guided meeting creates a new Change preview, runs the
-existing strict registry validation, shows every generated artifact, and writes the complete
-`changes/<CHANGE-ID>/` directory only after explicit confirmation. It never commits, pushes,
-opens or merges a pull request, creates a workspace, or starts an Agent.
+Open the address the command prints — it carries a per-session access token in the URL
+fragment, required for the planning-PR step. The guided meeting creates a new Change preview,
+runs the existing strict registry validation, shows every generated artifact, and writes the
+complete `changes/<CHANGE-ID>/` directory only after explicit confirmation.
 
-After a human reviews and merges the planning PR, open **작업 시작 문서**, enter the planning
-merge SHA, and create the eligible Work Unit packets. The same approval and dependency rules
-as `npm run bootstrap` apply.
+If exactly one `changes/<CHANGE-ID>/WORK_UNITS.yaml` has `state: draft`, the UI treats it as
+the active Change and restores its plan, scope, Work Units, and contracts for continued editing.
+New UI drafts include `DRAFT.json` as their lossless editing source; legacy drafts are reconstructed
+from `PLAN.md`, `WORK_UNITS.yaml`, and contract snapshots. The Change ID stays fixed, and saving
+updates the generated artifacts while preserving unmodeled files. More than one draft Change is
+invalid and must be resolved before the UI can open a planning session.
+
+Once the draft is saved, the review step offers three steps that end at the planning PR:
+
+1. **승인 요청으로 확정** rewrites the saved artifacts with `state: approved` and promotes every
+   implementation Work Unit that declares verification commands to `state: ready`. These values
+   must be inside the planning PR, because dispatch reads the manifest at the plan SHA. A Work
+   Unit without verification commands blocks the transition instead of shipping an undispatchable
+   plan.
+2. **계획 PR 올리기** creates `change/<CHANGE-ID>/coordination` from `origin/main`, commits only
+   `changes/<CHANGE-ID>/`, pushes, and opens the pull request with `gh`. It records the PR number
+   in `PRS.yaml` on the same branch.
+3. **병합 상태 확인** reads the PR after a human merges it and fills in the merge SHA.
+
+The UI never merges a pull request, force-pushes, pushes to `main`, moves submodule pointers,
+creates a workspace, or starts an Agent. Review and merge stay on GitHub, and `AGENTS.md` still
+governs what implementation agents may do inside each service repository.
+
+With the merge SHA in hand, open **작업 지시서 만들기** and create the eligible Work Unit packets.
+The same approval and dependency rules as `npm run bootstrap` apply. Packets stay local under
+`.task-packets/`; each Writer regenerates them from the same plan SHA and compares hashes.
 
 ## Start here
 
@@ -61,6 +84,11 @@ npm run change:create -- --change CHG-<NAME>-001 \
 # 3. Hand one work unit to one writer, human or agent.
 npm run bootstrap -- --plan-sha <approved-root-merge-sha> \
   --change CHG-<NAME>-001 --unit <work-unit> --writer <name> --run run-001 --apply
+
+# 4. The writer drives that packet to a pull request.
+npm run writer -- start --packet run-001 --apply
+npm run writer -- check --packet run-001
+npm run writer -- pr --packet run-001 --apply
 ```
 
 ## Read next
@@ -69,6 +97,7 @@ npm run bootstrap -- --plan-sha <approved-root-merge-sha> \
 |---|---|
 | [RUNBOOK.md](./RUNBOOK.md) | 사람을 위한 전체 운영 절차와 명령 레퍼런스 |
 | [AGENTS.md](./AGENTS.md) | 모든 Agent와 Writer가 지키는 실행 계약 |
+| [WRITER.md](./WRITER.md) | 작업 지시서를 받은 Writer의 실행 안내 |
 <!-- example:start -->
 | [examples/TUTORIAL.md](./examples/TUTORIAL.md) | 실제 submodule로 한 사이클을 실행하는 선택형 실습 |
 | [examples/todo](./examples/todo) | A complete worked run of the whole cycle |

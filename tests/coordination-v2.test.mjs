@@ -948,3 +948,25 @@ work_units:
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('registry permits at most one draft Change', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'coord-v2-single-draft-'));
+  try {
+    mkdirSync(join(dir, 'services'), { recursive: true });
+    writeFileSync(join(dir, 'services/registry.yaml'), 'version: 2\nservices: []\n');
+    writeFileSync(join(dir, '.gitmodules'), '');
+    for (const id of ['CHG-DRAFT-A', 'CHG-DRAFT-B']) {
+      mkdirSync(join(dir, `changes/${id}`), { recursive: true });
+      writeFileSync(join(dir, `changes/${id}/WORK_UNITS.yaml`), `schema_version: 1
+change_id: ${id}
+state: draft
+work_units: []
+`);
+    }
+    const result = run('verify-registry.mjs', ['--strict', '--allow-uninitialized'], dir);
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stdout}${result.stderr}`, /only one draft Change is allowed.*CHG-DRAFT-A.*CHG-DRAFT-B/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

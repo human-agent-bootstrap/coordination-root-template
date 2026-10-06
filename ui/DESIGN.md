@@ -69,6 +69,10 @@
 - Contracts: repeatable Markdown/JSON editors with a compact `파일 업로드` control and explicit
   participating-service map.
 - Review list: ready, needs attention, and blocking groups with links back to the field.
+- Resume state: when exactly one Change manifest is `draft`, restore every planning field from
+  `DRAFT.json` (or legacy canonical artifacts), lock its Change ID, and treat it as the active
+  editable plan. Multiple draft Changes are a blocking repository-state error rather than a
+  selection heuristic; saving preserves files that are not managed by the UI.
 - File preview: accessible tabs, a one-sentence role description for the active file, and a
   monospace preformatted panel.
 - Empty states state the next action rather than using placeholder decoration.

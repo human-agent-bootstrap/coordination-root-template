@@ -114,18 +114,40 @@ CLI와 Markdown 직접 편집 대신 로컬 UI에서 회의를 진행할 수 있
 
 ```bash
 npm run ui
-# http://127.0.0.1:4173
+# http://127.0.0.1:4173/#token=<세션 토큰>
 ```
+
+명령이 출력한 주소를 그대로 연다. 주소 fragment의 토큰은 계획 PR 생성에만 쓰이고 서버
+세션이 끝나면 무효가 된다.
 
 UI에서 목표, 비목표, 성공 기준, 참여 서비스, 작업 단위, 담당자, 수정 범위, 의존성과
 계약을 순서대로 작성한다. 저장 전에는 생성 파일과 strict registry 검증 결과를 확인한다.
 저장하면 `changes/<CHANGE-ID>/` 전체 산출물이 생성되지만, 이는 계획 승인을 의미하지 않는다.
+
+`WORK_UNITS.yaml`이 `state: draft`인 Change가 하나 있으면 해당 Change를 현재 활성 초안으로
+간주하고 서버 시작 시 모든 입력 단계를 복원한다. 신규 UI 초안은 `DRAFT.json`을 손실 없는
+편집 원본으로 사용하며, 기존 초안은 `PLAN.md`, `WORK_UNITS.yaml`, 계약 파일에서 복원한다.
+활성 초안은 같은 Change ID로 갱신하고 UI가 관리하지 않는 파일은 보존한다. draft Change가
+둘 이상이면 임의 선택하지 않고 서버/API 검증을 실패시킨다.
 기존 절차대로 Planning PR을 독립 검토하고 병합해야 한다.
 
-병합 후 UI의 **작업 시작 문서**에서 Planning merge SHA를 입력한다. SHA가 `main` 또는
-`origin/main`에서 확인되고 Work Unit의 상태, 담당자와 의존성이 유효할 때만
-`.task-packets/<run-id>.md`를 생성할 수 있다. UI는 commit, push, PR, merge, workspace 생성,
-Agent 실행 또는 Candidate 조립을 수행하지 않는다.
+저장 이후 검토 단계는 세 단계로 이어진다.
+
+1. **승인 요청으로 확정** — `WORK_UNITS.yaml` 최상단을 `state: approved`로, 검증 명령을 선언한
+   구현 Work Unit을 `state: ready`로 다시 쓴다. `PLAN.md`와 `STATUS.md`의 상태 문구도 함께
+   바뀐다. 이 값은 반드시 Planning PR 내용에 포함되어야 한다. bootstrap과 UI 발급은 작업
+   디렉터리가 아니라 **plan SHA 시점의 manifest**를 읽으므로, 병합 후에 값을 채우면 그 SHA로는
+   발급할 수 없다. 검증 명령이 없는 구현 Work Unit이 있으면 전환이 차단된다.
+2. **계획 PR 올리기** — `change/<CHANGE-ID>/coordination` 브랜치를 `origin/main`에서 만들고
+   `changes/<CHANGE-ID>/` 경로만 커밋해 push한 뒤 `gh`로 PR을 연다. PR 번호는 같은 브랜치에서
+   `PRS.yaml`에 기록한다.
+3. **병합 상태 확인** — 사람이 GitHub에서 리뷰·병합한 뒤 이 버튼으로 머지 커밋 SHA를 가져온다.
+
+그 SHA로 **작업 지시서 만들기**에서 Work Unit별 `.task-packets/<run-id>.md`를 생성한다. SHA가
+`main` 또는 `origin/main`에서 확인되고 Work Unit의 상태, 담당자와 의존성이 유효해야 한다.
+
+UI는 merge, force push, `main` 직접 push, submodule 포인터 변경, workspace 생성, Agent 실행,
+Candidate 조립을 수행하지 않는다. 리뷰와 병합은 GitHub에서 사람이 한다.
 
 ```bash
 npm run change:create -- \
@@ -186,6 +208,10 @@ merge 전에 작성되는 manifest가 이를 `merged`로 기록할 수 없고, �
 plan SHA 검증(`origin/main` 도달 가능성)이 planning merge를 증명한다. 따라서 구현
 Work Unit은 Planning PR 안에서 바로 `state: ready`로 승인할 수 있다.
 
+Change 자체의 상태도 Planning PR 안에서 `state: approved`로 올린다. bootstrap은
+`approved` 또는 `active` manifest만 받는다. UI를 쓰면 승인 확정 단계가 이 값을 기록하고,
+CLI로 계획을 작성했다면 `WORK_UNITS.yaml` 최상단을 직접 고쳐 PR에 포함한다.
+
 Planning PR을 독립 리뷰 후 merge하고 merge SHA를 기록한다.
 
 ```bash
@@ -196,6 +222,9 @@ GH_HOST=github.com gh pr view <planning-pr-number> \
 구현은 Planning PR merge 전에는 시작하지 않는다.
 
 ## 5. Writer 사전 준비
+
+> 패킷을 받은 Writer가 구현부터 PR까지 진행하는 방법은 [`WRITER.md`](./WRITER.md)에 정리돼 있다.
+> 직접 작업하는 경우와 Agent에 위임하는 경우를 모두 다룬다.
 
 ### Root가 아직 없는 경우
 
@@ -283,7 +312,12 @@ push, PR 생성, merge는 하지 마세요.
 완료하면 표준 handoff를 작성하세요.
 ```
 
+workspace를 어떻게 넘기고 Agent의 보고를 어떻게 확인하는지는 [`WRITER.md`](./WRITER.md) 4장에
+있다.
+
 ## 7. 구현, 검증과 로컬 Handoff
+
+> Writer 시점의 단계별 안내는 [`WRITER.md`](./WRITER.md) 5장을 참고한다.
 
 Writer 또는 Agent는 할당된 workspace에서 구현하고 Work Unit의 검증 명령을 실행한다.
 
@@ -493,6 +527,7 @@ Coordinator가 Root 변경을 승인받고 새 plan SHA로 Task Packet을 다시
 | `npm run service:add` | 서비스 등록과 submodule 추가 |
 | `npm run change:create` | 승인 전 Change skeleton 생성 |
 | `npm run bootstrap` | 승인된 Work Unit의 Task Packet 생성 |
+| `npm run writer` | 작업 지시서 기반 준비·검증·커밋·PR (Writer용) |
 | `npm run workflow:check` | Root PR의 Work Unit 범위 검사 |
 | `node scripts/workflow-check.mjs ...` | 서비스 workspace의 branch·base·경로 검사 |
 | `npm run verify:registry` | registry, submodule, manifest와 경로 예약 검사 |
