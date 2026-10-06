@@ -1,15 +1,15 @@
 schema_version: 1
 change_id: CHG-AGENT-001
-state: draft
+state: approved
 plan_merge_sha: pending
 prs:
   - key: root-planning
     repo: root
     work_unit: contract-and-plan
-    number: null
-    state: not-started
-    base_sha: b9bceb694d96b06f4fa0409364545c7525541c16
-    head_sha: null
+    number: 13
+    state: open
+    base_sha: dd8febe7827364f897967691f6652b3033c5b571
+    head_sha: 31306b3874b1e31b0f50a08dbfc1a4be67da018c
     merge_sha: null
   - key: todo-collab-front
     repo: todo-collab-front

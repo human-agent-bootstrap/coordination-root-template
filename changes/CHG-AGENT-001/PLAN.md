@@ -1,18 +1,18 @@
-# CHG-AGENT-001 — ㄴㅇㄹ
+# CHG-AGENT-001 — test
 
 ## State
 
-- Status: DRAFT
+- Status: APPROVED
 - Coordinator: jpyoon
 - Required approvers: product owner, service owner, independent reviewer
-- Plan base: b9bceb694d96b06f4fa0409364545c7525541c16
+- Plan base: dd8febe7827364f897967691f6652b3033c5b571
 - Tracking: none
 
 ## Goals
 
-### GOAL-001 — sdf
+### GOAL-001 — test
 
-dsf
+test
 
 ## Non-goals
 
@@ -20,7 +20,7 @@ dsf
 
 ## Acceptance criteria
 
-- [AC-001] sdf
+- [AC-001] test
 
 ## Contracts
 
