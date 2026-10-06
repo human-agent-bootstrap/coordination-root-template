@@ -1,0 +1,40 @@
+{
+  "changeId": "CHG-AGENT-001",
+  "title": "test",
+  "coordinator": "jpyoon",
+  "goals": [
+    {
+      "id": "GOAL-001",
+      "title": "test",
+      "outcome": "test"
+    }
+  ],
+  "noNonGoals": true,
+  "nonGoals": [],
+  "hasUserFlow": false,
+  "userFlow": [],
+  "acceptanceCriteria": [
+    "test"
+  ],
+  "services": [
+    "todo-collab-front"
+  ],
+  "noSharedContract": true,
+  "contracts": [],
+  "workUnits": [
+    {
+      "id": "todo-collab-front",
+      "goalId": "GOAL-001",
+      "service": "todo-collab-front",
+      "goal": "test",
+      "writer": "abtest",
+      "writePaths": [
+        "src/**"
+      ],
+      "dependsOn": [],
+      "verify": [
+        "npm test"
+      ]
+    }
+  ]
+}

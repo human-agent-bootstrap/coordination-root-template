@@ -1,6 +1,6 @@
 schema_version: 1
 change_id: CHG-AGENT-001
-state: draft
+state: approved
 plan_merge_sha: pending
 prs:
   - key: root-planning
@@ -8,7 +8,7 @@ prs:
     work_unit: contract-and-plan
     number: null
     state: not-started
-    base_sha: b9bceb694d96b06f4fa0409364545c7525541c16
+    base_sha: dd8febe7827364f897967691f6652b3033c5b571
     head_sha: null
     merge_sha: null
   - key: todo-collab-front
