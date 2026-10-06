@@ -6,10 +6,10 @@ prs:
   - key: root-planning
     repo: root
     work_unit: contract-and-plan
-    number: null
-    state: not-started
+    number: 13
+    state: open
     base_sha: dd8febe7827364f897967691f6652b3033c5b571
-    head_sha: null
+    head_sha: 31306b3874b1e31b0f50a08dbfc1a4be67da018c
     merge_sha: null
   - key: todo-collab-front
     repo: todo-collab-front
