@@ -3,8 +3,8 @@ name: Coordination validation
 # The root validates coordination state only: manifests, ownership, scope, and the
 # exact-SHA candidate. Per-service build and test belong to each service repository's
 # own CI — this workflow cannot know your services' stacks. To run a cross-repo
-# browser E2E here, add root-level tests under e2e/ and copy the per-stack setup
-# steps from examples/todo/ci-snippet.yml.
+# browser E2E here, add root-level tests under e2e/ and the setup steps your
+# services' stacks need.
 
 on:
   pull_request:
@@ -57,8 +57,3 @@ jobs:
       - env:
           COORDINATION_GITHUB_TOKEN: ${{ secrets.COORDINATION_GITHUB_TOKEN }}
         run: npm run verify:candidate:ci -- --event push --before "${{ github.event.before }}" --after "${{ github.sha }}"
-      # The example's own suite runs only while the example is still installed.
-      - id: example
-        run: echo "present=${{ hashFiles('examples/todo/tests/*.test.mjs') != '' }}" >> "$GITHUB_OUTPUT"
-      - if: steps.example.outputs.present == 'true'
-        run: npm run test:example

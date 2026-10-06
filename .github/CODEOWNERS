@@ -3,7 +3,6 @@
 /.gitmodules <COORDINATOR-OWNER>
 /changes/ <COORDINATOR-OWNER>
 /e2e/ <COORDINATOR-OWNER>
-/examples/ <COORDINATOR-OWNER>
 /package.json <COORDINATOR-OWNER>
 /package-lock.json <COORDINATOR-OWNER>
 /scripts/ <COORDINATOR-OWNER>

@@ -39,7 +39,7 @@ test('work-unit scope validation stays scoped to pull requests', () => {
 });
 
 test('root CI assumes no service stack', () => {
-  // Per-stack setup belongs to the service repos, or to examples/todo/ci-snippet.yml.
+  // Per-stack setup belongs to each service repository's own CI.
   assert.doesNotMatch(workflow, /uv sync|setup-uv|--prefix services\//);
 });
 
@@ -55,12 +55,8 @@ test('final candidates run E2E when a suite is present', () => {
   assert.doesNotMatch(workflow, /hashFiles\('e2e\/\*\.test\.mjs'\)/);
 });
 
-test('the removable example suite stays opt-in', () => {
-  assert.match(workflow, /hashFiles\('examples\/todo\/tests\/\*\.test\.mjs'\) != ''/);
-});
-
 test('trusted executable inputs require coordinator review', () => {
-  for (const path of ['/.github/', '/scripts/', '/tests/', '/e2e/', '/examples/', '/package.json', '/package-lock.json']) {
+  for (const path of ['/.github/', '/scripts/', '/tests/', '/e2e/', '/package.json', '/package-lock.json']) {
     assert.match(codeowners, new RegExp(`^${path.replaceAll('/', '\\/').replace('.', '\\.')} `, 'm'));
   }
 });
@@ -72,7 +68,7 @@ test('local task packets are ignored separately from macOS metadata', () => {
 
 test('documented local commands resolve to real scripts', () => {
   const repository = resolve(import.meta.dirname, '..');
-  const docs = ['README.md', 'RUNBOOK.md', 'AGENTS.md', 'examples/TUTORIAL.md']
+  const docs = ['README.md', 'RUNBOOK.md', 'AGENTS.md', 'WRITER.md']
     .filter((path) => existsSync(resolve(repository, path)))
     .map((path) => readFileSync(resolve(repository, path), 'utf8'))
     .join('\n')
