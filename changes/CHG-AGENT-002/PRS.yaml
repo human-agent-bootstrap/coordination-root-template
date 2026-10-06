@@ -1,0 +1,30 @@
+schema_version: 1
+change_id: CHG-AGENT-002
+state: approved
+plan_merge_sha: pending
+prs:
+  - key: root-planning
+    repo: root
+    work_unit: contract-and-plan
+    number: null
+    state: not-started
+    base_sha: 07ff2debb63a9eda26f99d675d4df7e0029a2007
+    head_sha: null
+    merge_sha: null
+  - key: todo-collab-front
+    repo: todo-collab-front
+    work_unit: todo-collab-front
+    number: null
+    state: not-started
+    base_sha: c33b5990dbca3379597deb02aa2bbb746de01dd3
+    head_sha: null
+    merge_sha: null
+    merge_method: squash
+  - key: root-candidate
+    repo: root
+    work_unit: candidate-integration
+    number: null
+    state: not-started
+    base_sha: pending-plan-merge
+    head_sha: null
+    merge_sha: null
