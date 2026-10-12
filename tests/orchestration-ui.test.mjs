@@ -88,7 +88,7 @@ const baseSha = 'a'.repeat(40);
 const validDraft = {
   changeId: 'CHG-TEST-001',
   title: '계획 회의 산출물',
-  coordinator: 'jpyoon',
+  coordinator: 'alice',
   goals: [
     { id: 'GOAL-001', title: '계획 작성', outcome: '회의 내용을 검증 가능한 작업 계획으로 만든다.', participants: ['planning-team'] },
   ],
@@ -644,7 +644,7 @@ test('repository context exposes the single structured draft as the active Chang
 ## State
 
 - Status: DRAFT
-- Coordinator: jpyoon
+- Coordinator: alice
 
 ## Goals
 
@@ -678,7 +678,7 @@ work_units:
     state: in_progress
     goal: approve
     branch: change/CHG-RESUME-001/coordination
-    writer: jpyoon
+    writer: alice
     write_paths: [changes/CHG-RESUME-001/**]
     depends_on: []
     verify: [npm test]
@@ -697,7 +697,7 @@ work_units:
     state: draft
     goal: integrate
     branch: change/CHG-RESUME-001/candidate-integration
-    writer: jpyoon
+    writer: alice
     write_paths: [changes/CHG-RESUME-001/**]
     depends_on: [api-change]
     verify: [npm test]
@@ -752,7 +752,7 @@ test('legacy draft loading rejects a declared contract whose snapshot is missing
 ## State
 
 - Status: DRAFT
-- Coordinator: jpyoon
+- Coordinator: alice
 
 ## Goals
 
@@ -808,7 +808,7 @@ test('legacy single-goal drafts restore wrapped list content', () => {
 ## State
 
 - Status: DRAFT
-- Coordinator: jpyoon
+- Coordinator: alice
 
 ## Goal
 
