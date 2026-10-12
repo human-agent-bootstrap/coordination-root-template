@@ -15,6 +15,16 @@ Before editing, obtain and read:
 - `changes/<CHANGE-ID>/WORK_UNITS.yaml`;
 - every contract snapshot listed in the task packet.
 
+For a human-approved Candidate UI execution only, the Coordinator-held original
+`.task-packets/<run-id>.candidate-approval.json` resolves the previously pending Candidate base
+and service merge SHAs. Compare both the approval copy and the `.candidate.md` packet with the
+originals in the declared Coordinator directory; the digest detects alteration, not human
+approval. The approved Root plan still defines goals, contracts and maximum scope. The Agent's
+scope is only `e2e/**`; Root records, service pointers, full verification, publication and
+closure belong to the human-operated Coordinator UI. Use the packet's Candidate-role scope
+check, never the regular Writer publication commands. The lease ends only when the human
+confirms handoff.
+
 Never infer or invent a missing ID, SHA, branch, dependency, path, or verification command.
 Select exactly one Work Unit and restate its repository, branch, `base_sha`, `write_paths`,
 dependencies, and checks. Stop if a dependency is not satisfied or an input changed.
@@ -107,6 +117,8 @@ A coding agent must not:
   Unit explicitly allows those paths;
 - perform destructive migrations or write production data;
 - record an unpushed SHA as a merged PR or Candidate SHA;
+- close a Change, or record a post-merge gate outcome such as main CI or an
+  integration-environment confirmation, that a human did not actually observe;
 - fabricate, omit, or carry forward verification evidence.
 
 A human performs push, PR, review, merge, Candidate, and release operations in `RUNBOOK.md`.

@@ -57,3 +57,21 @@ jobs:
       - env:
           COORDINATION_GITHUB_TOKEN: ${{ secrets.COORDINATION_GITHUB_TOKEN }}
         run: npm run verify:candidate:ci -- --event push --before "${{ github.event.before }}" --after "${{ github.sha }}"
+
+  ui-regression:
+    # The tool's own screen suite. Only on pull requests: a consumer committing their own
+    # plan should not pay for a Chromium install on every push.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci --include=dev --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui

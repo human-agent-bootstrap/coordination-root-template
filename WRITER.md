@@ -273,3 +273,23 @@ Candidate PR은 구현한 사람과 **독립된 사람**이 승인합니다. 역
 
 이 경우 영향받는 Work Unit의 승인은 무효입니다. Coordinator가 계획을 고쳐 다시 승인받고, 새
 plan SHA로 작업 지시서를 재발급합니다 (`AGENTS.md` §8, `RUNBOOK.md` §10).
+
+### Candidate E2E 위임을 받았을 때
+
+이 패킷은 기존 서비스 작업 지시서 `.task-packets/<run-id>.md`와 다릅니다. UI의
+**Agent에게 E2E 작성 위임**이 만든 `.task-packets/<run-id>.candidate.md`를 사용합니다.
+
+1. 패킷에 지정된 전용 Root workspace에서 `AGENTS.md`, 승인 계획·계약, 패킷과
+   `.candidate-approval.json` 사본을 읽습니다. 패킷에 적힌 Coordinator 제어 영역의 원본과
+   사본·패킷을 대조합니다. digest는 변조 검사이지 사람의 승인 신원 증명이 아닙니다.
+2. 고정된 서비스 SHA·계약을 대상으로 `e2e/**`만 작성합니다. 테스트가 서비스 설치·실행,
+   임시 데이터·종료를 책임집니다. 서비스 구현·계약·Root 기록·포인터·CI를 수정하지 않습니다.
+   Coordinator가 미리 준비한 Root 변경을 자신의 수정으로 staging·commit하지 않습니다.
+3. 패킷의 **agent local** 검사(`npm run test:e2e`와 `--candidate-role agent` 범위 검사)만
+   수행하고 실제 exit code와 Head SHA를 handoff에 적습니다. 원격 PR 검사·push·PR·merge,
+   `writer pr`·`writer finish`는 수행하지 않습니다. 토큰이나 UI 세션 주소를 받지 않습니다.
+4. handoff를 Coordinator에게 전달하고 작업을 끝냅니다. 사람이 UI에서 **Agent handoff 확인**을
+   눌러야 UI 잠금이 해제됩니다. 이후 전체 재검증·완료 기준 증거 연결·PR 생성은 Coordinator가 합니다.
+
+Agent 단계에는 UI가 같은 workspace를 수정·검증하지 않습니다. 인계 후 수정이 더 필요하면
+Coordinator에게 알려 작업 주체를 다시 조율합니다. Agent와 UI가 동시에 수정하지 않습니다.

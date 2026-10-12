@@ -427,12 +427,135 @@ Coordinator는 `PRS.yaml`과 `STATUS.md`에 이 증거를 기록한다. `verify:
 모든 PR이 merge된 상태를 전제로 하므로 일부 PR만 merge된 시점에는 실행하지 않고,
 Candidate 단계(9장)에서 한 번 실행한다.
 
-## 9. Candidate 조립과 통합 검증
+## 9. 작업 마감
 
-모든 서비스 PR이 merge되면 Coordinator가 각 submodule을 정확한 merge SHA로 맞추고
-Candidate를 작성한다.
+모든 서비스 PR이 merge되면 Coordinator가 `npm run ui`의 세션 주소에서 상단 **작업 마감**을 연다.
+화면은 네 줄로 고정되어 있고, 사람이 결정하는 지점은 두 곳이다.
+
+```text
+① 결과 모으기   ② 통합 검증   ③ 완료 기준 확인   ④ 마감
+```
+
+Run ID·Candidate 번호는 입력하지 않는다. 서버가 선언된 저장소·브랜치에서 실제 병합 결과를
+조회해 **서비스 merge SHA**를 고정하고, 번호와 Run ID를 도출한다. squash 전 PR head를
+서비스 포인터로 쓰지 않는다. 오래된 `PRS.yaml` 번호는 신뢰하지 않는다.
+HTTP 입력으로 셸 명령이나 workspace 경로를 받지 않으며, 모든 Candidate API는 세션 토큰으로 보호한다.
+
+### 사람 결정 1 — 이 결과로 마감 시작
+
+**마감할 작업**을 고르면 모인 결과가 바로 나타난다. 저장소별 PR 번호·병합 여부·CI·merge SHA와
+바꿀 기록·고정할 SHA를 확인한 뒤 **이 결과로 마감 시작**을 누른다. 이 한 번이 실행 승인이며,
+미정이었던 실행값만 확정한다. 목표·계약·허용 경로 확대는 별도 계획 변경이 필요하다.
+승인 원본은 덮어쓰지 않고 제어 영역에 보관한다.
+
+이어서 준비와 검증이 자동으로 진행된다. 전용 Root clone에 Candidate 브랜치·서비스 SHA·기록·포인터를
+준비하고, 승인된 Root·서비스 검사와 원격 PR·CI 검사, 제품 E2E와 승인 범위를 검사한다. 기존 Root 작업 파일,
+Writer checkout과 Git index는 수정하지 않는다. 필수 검사 없음·실패·미실행은 통과가 아니다.
+
+PR 없음·미병합·CI 실패·여러 PR 같은 막힘은 해당 줄에 무엇을 해야 하는지로 표시된다.
+여러 PR이 같은 브랜치에 있으면 사람이 고른다. 실패한 줄에는 **다시 시도**가 하나 생기며,
+clone·브랜치·부분 기록과 사람이 고친 내용을 자동으로 덮어쓰지 않는다.
+
+제품 E2E가 없으면 ②가 막힌다. **Agent에게 E2E 맡기기**로 패킷과 승인 사본을 만들고
+**지시서 복사**·**작업 폴더 경로 복사**로 전달한 뒤, 실제 handoff를 받은 사람이
+**Agent 작업 끝났음**을 누른다. 위임 범위와 금지 사항은 아래 제품 E2E와 증거를 따른다.
+
+### 사람 결정 2 — 완료 기준 확인과 마감
+
+③에서 기준마다 통과한 실제 검사가 근거로 제안된다. 제안은 출발점일 뿐이다. 근거가 기준을 실제로
+입증하는지 확인하고, 필요하면 **바꾸기**에서 검사와 설명을 고친 뒤 기준마다 확인에 표시한다.
+일괄 확인은 제공하지 않는다. 테스트 성공만으로 기준이 자동 충족되지 않는다.
+
+**Candidate PR 만들기**는 승인 경로만 커밋하고 최종 HEAD에서 전체 검사와 정확한 Candidate 검사를
+다시 실행한 뒤 push·PR을 생성한다. 같은 브랜치의 열린 PR만 재사용하고, 닫힘·병합·여러 PR 또는
+HEAD 불일치는 사람이 확인해야 한다. force push·merge는 하지 않는다.
+
+사람이 PR의 diff·CI·증거를 확인하고 병합하면 UI가 병합과 main CI 상태를 스스로 조회한다.
+④에는 **PR 생성·병합·main CI·통합 환경**이 각각 따로 표시된다. 셋이 모두 통과하면 UI가
+기계가 알 수 없는 하나를 묻는다: 통합 환경에서 무엇을 확인했는지. 내용을 적고 직접 확인했음을
+표시한 뒤 **작업 마감**을 누르면 `change/<CHANGE-ID>/candidate-closure` 브랜치에 마감 기록을
+커밋하고 마감 PR을 만든다.
+
+마감 기록은 다음을 담는다.
+
+| 파일 | 기록 |
+|---|---|
+| `WORK_UNITS.yaml` | Change `state: complete`, `candidate-integration`과 `candidate-closure` `state: merged` |
+| `releases/candidate-NNN.yaml` | `state: complete`와 `closure`(Candidate merge SHA, main CI, 통합 환경 확인) |
+| `STATUS.md` | `**State:** COMPLETE`, 계획 SHA, 서비스별 merge SHA, 기준별 증거, gate 4개 |
+
+**마감 PR 생성은 마감이 아니다.** 사람이 이 PR을 확인·병합해야 작업이 닫힌다. 병합 전까지 ④는
+`마감 PR #…을 사람이 확인하고 병합해야 이 작업이 닫힙니다`로 남고, UI가 마감 PR 상태를 주기적으로
+조회한다. 병합이 확인되면 그때 ④가 완료가 된다. 그 시점부터
+`npm run verify:registry -- --strict`가 완료를 검증할 수 있다.
+UI는 환경을 대신 실행·확인하지 않고, 사람 확인 없이 `STATUS.md`를 `COMPLETE`로 바꾸지 않는다.
+최종 판단은 11장의 완료 기준을 따른다. Candidate PR 자신의 merge SHA만 기록하기 위한 PR은
+만들지 않는다. 마감 커밋은 병합 전에 존재할 수 없는 gate 결과를 기록하므로 여기에 해당하지 않는다.
+
+### 제품 E2E와 증거
+
+제품 E2E를 **요구할지**는 승인된 계획이 정하고, **실행**은 suite가 있으면 언제나 한다.
+Candidate 작업 단위의 `verify:`에 `npm run test:e2e`가 선언되어 있으면 suite가 없을 때 막히고,
+선언이 없으면 막지 않는다. 선언하지 않았더라도 `e2e/`에 suite가 있으면 실행하고 결과를
+기록하므로, 작성해 둔 통합 검증이 조용히 누락되지 않는다. 서비스가 여럿이고
+실제로 함께 동작해야 하는 Change는 선언한다. 문서 전용·단일 서비스·설정 변경처럼 교차 검증이
+필요 없는 Change는 선언하지 않으며, 그 경우 통합 증거를 남기지 않았다는 사실이 기록에 그대로 남는다.
+도구를 고쳐 요구를 우회하지 않는다 — 요구 여부는 계획 재승인으로 바꾼다.
+
+선언했는데 suite가 없으면 위임해 작성하고, 실패하면 보완한 후 다시 검증한다.
+`npm run test:ui`가 돌리는 `tests-ui/`는 도구 화면 회귀 테스트이며 제품 E2E가 아니다.
+`e2e/`에는 제품 suite만 둔다. 기존 CI의 `test:e2e -- --if-present` 정책은 별개다.
+suite 없음으로 `skipped`된 exit 0은 제품 통합 통과 증거가 아니다.
+
+제품 suite는 `e2e/*.test.mjs`의 Node test 형식으로 작성한다. 승인된 계약과 서비스 SHA를
+대상으로 실제 사용자 흐름을 검사하며 서비스 설치·빌드·실행·임시 데이터·종료를 E2E가
+책임진다. UI에 서비스 스택별 실행 코드를 넣지 않는다. `e2e/**`만으로 필요한 CI 설정을
+구현할 수 없다면 Agent는 멈추고 별도 Root 변경을 요청한다.
+
+Candidate YAML에는 서비스별 단일 SHA 검사(`command`)와 Root HEAD·승인 digest로 정확한
+서비스 조합을 고정한 검사(`integration-command`)의 실제 결과를 연결할 수 있다.
+커밋 전 사람이 확인한 증거 연결은 YAML에 들어가고, 최종 commit의 전체 재검증 기록은
+Coordinator 실행 기록에 남는다. 최종 HEAD는 PR 본문에 표시된다. 같은 파일에 자기 commit
+SHA를 넣으려고 YAML을 다시 커밋하지 않는다. 사람은 실제 결과가 기준을 입증하는지 확인한다.
+
+### 실행 기록과 복구
+
+아래 경로는 Coordinator가 UI를 시작한 Root의 로컬 제어 영역이며 Git에 포함하지 않는다.
+화면의 **기술 상세**에서 Run ID·workspace·digest·단계 기록을 볼 수 있다.
+
+| 경로 | 역할 |
+|---|---|
+| `.task-packets/<run-id>.candidate-approval.json` | 덮어쓰지 않는 실행 승인 원본 |
+| `.task-packets/<run-id>.candidate-state.json` | 단계·검사·최종 HEAD·PR·마감 기록 |
+| `.task-packets/<run-id>.candidate.md` | Agent에게 전달할 E2E 지시서 원본 |
+| `.task-packets/candidate-workspaces/<run-id>/` | 전용 Root clone; `.task-packets/`에 Agent 사본 보관 |
+| `.task-packets/candidate.lock` | 동시에 하나의 Candidate 작업만 변경하도록 하는 잠금 |
+
+같은 Root에서 UI를 다시 시작하고 새 세션 주소로 접속하면 진행 중인 마감을 자동으로 복원한다.
+같은 탭의 새로고침은 세션 토큰을 보존하지만 서버 재시작 후에는 새 주소를 사용한다.
+원본 승인·패킷의 digest는 변조 검사용이며 사람의 승인 신원을 증명하지 않는다.
+
+Root main base, 계약, 선택한 PR·SHA 또는 범위가 바뀌면 기존 승인을 만료시키고 다시
+확인·승인한다. 목표·계약·범위·필수 검증 변경은 계획 재승인부터 진행한다.
+자동 rebase/reset이나 이전 증거 재사용은 하지 않는다. 새로운 실행은 새 Run ID를 쓴다.
+
+준비 실패 시 clone·브랜치·부분 기록을 보존한다. 변경되지 않은 부분 준비만 재시도하고
+실패 후 사람이 수정한 내용을 자동 덮어쓰지 않는다. PR 실패 시에도 커밋·브랜치를 보존한다.
+잠금이 남으면 기록의 Run ID·PID로 이전 프로세스와 Agent 작업 종료를 먼저 확인한다.
+확인 후 해당 `candidate.lock`만 정리하며 `.task-packets/` 전체나 workspace는 지우지 않는다.
+`.candidate-state.json.tmp`가 남으면 상태 원본과 임시 파일을 사람이 대조해야 한다.
+임의로 승인을 수정하거나 `.tmp`를 원본으로 덮어써 복구하지 않는다.
+
+### CLI 대안: 사람이 직접 준비한 Candidate 검사
+
+기존 YAML 형식과 검증 명령은 유지한다. UI를 사용하지 않는 Coordinator는 승인된 입력으로
+별도 workspace·Candidate 브랜치를 준비하고 submodule을 정확한 서비스 merge SHA로 맞춘다.
+`PRS.yaml`·`WORK_UNITS.yaml`·`STATUS.md`·Candidate에 실제 조회 결과와 증거를 기록한다.
+CLI 검증 명령은 준비를 대신하거나 Candidate UI 승인을 새로 만들어 주지 않는다.
 
 Candidate는 registry 전체가 아니라 이번 Change에 필요한 서비스 부분집합만 포함할 수 있다.
+
+서비스 항목 예시(완전한 Candidate 파일이 아님):
 
 ```yaml
 services:
@@ -450,43 +573,32 @@ services:
 검증:
 
 ```bash
-npm run verify:registry
+npm run verify:registry -- --strict
 npm run verify:prs -- --change CHG-<NAME>-001
 npm run verify:candidate -- \
   --change CHG-<NAME>-001 \
+  --candidate 001 \
   --target-ref origin/main
-# e2e/*.test.mjs가 있는 경우
+# 제품 suite를 준비한 뒤 실행; suite 없음은 실패
 npm run test:e2e
 ```
 
-`verify:prs`는 GitHub API 네트워크와 `COORDINATION_GITHUB_TOKEN`이 필요하다. Agent의
-외부망 로컬 단계에서는 실행하지 않는다. Root의 `origin`은 HTTPS와
+`verify:prs`는 GitHub API 네트워크와 3장의 로컬 또는 CI 인증이 필요하다. Agent에게 실행을
+맡기지 않는다. Root의 `origin`은 HTTPS와
 `git@<host>:<org>/<repo>.git` 형식을 모두 지원한다.
 
-Candidate PR은 candidate 파일과 함께 `WORK_UNITS.yaml`도 갱신한다. 자신의
-`candidate-integration` unit에 실제 base SHA(planning merge SHA 또는 그 후손)를 기록하고,
-merge된 구현 Work Unit을 `state: merged`로 표시한다. 이 경로들은 candidate-integration의
-`write_paths`에 선언되어 있다.
-
-통합 환경과 검증 가능한 시나리오가 있는 경우 Candidate PR에서 `e2e/` suite를 추가하고
-`npm run test:e2e`를 실행한다. 명시적으로 실행한 `test:e2e`는 테스트가 0개면 실패하지만,
-자동 Candidate 게이트는 suite가 없으면 `skipped`로 기록하며 이를 통과 증거로 취급하지 않는다.
-`e2e/**`는 선택적으로 추가할 수 있도록 candidate-integration의 `write_paths`에 포함된다.
+Candidate Work Unit에 실제 base SHA(planning merge SHA 또는 그 후손)를 기록하고,
+병합된 구현 Work Unit을 `state: merged`로 표시한다. 기록·포인터·E2E 경로는 승인 계획의
+Candidate `write_paths` 안에 있어야 한다.
 `verify:candidate --target-ref`는 target pointer, ancestry, 원격 도달성, squash merge
-commit 범위와 모든 `AC-*`의 증거를 검사한다. 다만 증거 설명이 실제 Acceptance Criteria를
-충분히 만족하는지는 사람이 검토한다.
+commit 범위와 모든 `AC-*`의 증거 구조를 검사한다. `state: complete`인 Candidate는
+`closure`의 merge SHA와 사람의 통합 환경 확인까지 검사한다. 선언된 서비스 검사와 제품 E2E를
+이 명령이 대신 실행하지는 않는다. 증거 설명의 실제 입증 여부도 사람이 검토한다.
 
-앞선 Candidate가 같은 서비스의 Root pointer를 먼저 변경했다면 현재 Candidate의
-`base_sha`가 stale해질 수 있다. 앞선 Candidate가 Root `main`에 merge된 뒤 현재 Candidate를
-rebase하고, 새 target을 기준으로 전체 검증과 필요한 승인을 다시 수행한다.
+앞선 Candidate가 Root pointer를 먼저 변경했다면 현재 Candidate의 `base_sha`가 stale해질
+수 있다. 이전 증거를 쓰지 않고 새 target 기준으로 필요한 승인과 전체 검증을 다시 수행한다.
+Candidate UI 실행을 수동 rebase해서 이전 승인을 유지하려고 하지 않는다.
 
-Candidate PR은 사내 Wi-Fi에서 필수 검증 3종과, 가능한 경우 E2E를 실행한 뒤 구현 Writer와
-독립된 사람이 승인한다.
-PR CI는 의도적으로 secret을 받지 않으므로 GitHub API 검증을 대신하지 않는다. Candidate PR
-merge 후에는 신뢰된 `main` 코드가 self-hosted CI에서 PR/SHA와 Candidate를 다시 검증하고,
-E2E suite가 있으면 함께 실행한다. 적용 가능한 staging 검증까지 통과해야 완료다.
-`STATUS.md`에는 planning SHA, 서비스별 merge SHA, CI와 실행한 E2E 증거, 다음 gate를 기록한다.
-Candidate PR 자신의 merge SHA만 기록하기 위한 별도 Closure PR은 만들지 않는다.
 
 ## 10. 변경 중단과 재승인
 

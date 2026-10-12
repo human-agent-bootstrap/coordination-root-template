@@ -10,8 +10,9 @@ const state = {
 
 function readToken() {
   const match = location.hash.match(/token=([A-Za-z0-9_-]+)/);
-  if (!match) return '';
+  if (!match) return sessionStorage.getItem('coordination-session-token') ?? '';
   history.replaceState(null, '', `${location.pathname}${location.search}`);
+  sessionStorage.setItem('coordination-session-token', match[1]);
   return match[1];
 }
 
@@ -993,7 +994,7 @@ async function runPlanPr() {
       link.textContent = response.prUrl;
       result.append(link);
     }
-    showMessage(`계획 PR #${response.prNumber}을 올렸습니다. 리뷰어 승인과 병합 후 병합 확인을 누르세요.`, 'success');
+    showMessage(`계획 PR #${response.prNumber}을 올렸습니다. CI와 내용을 확인해 사람이 병합한 뒤 병합 확인을 누르세요.`, 'success');
     await loadStatus();
     renderPublish();
   } catch (error) {
@@ -1227,3 +1228,6 @@ form.addEventListener('change', ({ target }) => {
 addGoal();
 refreshStepAvailability();
 loadStatus().catch((error) => showMessage(error.message));
+
+import { initializeCandidate } from './candidate.js';
+initializeCandidate({ token: state.token });
