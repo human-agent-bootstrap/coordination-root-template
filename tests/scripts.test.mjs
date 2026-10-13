@@ -461,6 +461,45 @@ test('init removes the template\'s own change records but keeps the skeleton', (
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('init points CI at the fleet it is given, and only when asked', () => {
+  const dir = fixture();
+  const workflows = join(dir, '.github/workflows');
+  const seed = () => {
+    mkdirSync(workflows, { recursive: true });
+    writeFileSync(join(workflows, 'ci.yml'), 'jobs:\n  a:\n    runs-on: ubuntu-latest\n  b:\n    runs-on: ubuntu-latest\n');
+    writeFileSync(join(workflows, 'ui.yml'), 'jobs:\n  c:\n    runs-on: ubuntu-latest\n');
+    writeFileSync(join(dir, 'README.md'), '# <PROJECT-NAME>\n');
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '<PROJECT-NAME>', scripts: { test: 'x' } }, null, 2));
+  };
+  const base = ['--name', 'acme-coord', '--org', 'acme', '--apply'];
+  try {
+    seed();
+    const plain = run('init-project.mjs', base, dir);
+    assert.equal(plain.status, 0, plain.stderr);
+    assert.match(readFileSync(join(workflows, 'ci.yml'), 'utf8'), /runs-on: ubuntu-latest/);
+
+    seed();
+    const moved = run('init-project.mjs', [...base, '--ci-runner', 'self-hosted,linux'], dir);
+    assert.equal(moved.status, 0, moved.stderr);
+    for (const file of ['ci.yml', 'ui.yml']) {
+      const content = readFileSync(join(workflows, file), 'utf8');
+      assert.doesNotMatch(content, /ubuntu-latest/, `${file} kept the hosted runner`);
+      assert.match(content, /runs-on: \[self-hosted, linux\]/);
+    }
+    // Every job moves, not just the first one in a file.
+    assert.equal((readFileSync(join(workflows, 'ci.yml'), 'utf8').match(/runs-on: \[self-hosted, linux\]/g) ?? []).length, 2);
+
+    // Already moved: refuse rather than report a rewrite that did not happen.
+    seed();
+    writeFileSync(join(workflows, 'ci.yml'), 'jobs:\n  a:\n    runs-on: [self-hosted, linux]\n');
+    rmSync(join(workflows, 'ui.yml'));
+    const stale = run('init-project.mjs', [...base, '--ci-runner', 'self-hosted,linux'], dir);
+    assert.notEqual(stale.status, 0);
+    assert.match(stale.stderr, /found no .*job to rewrite/);
+    assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /<PROJECT-NAME>/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('init refuses a host the registry already pins to something else', () => {
   const dir = fixture();
   try {

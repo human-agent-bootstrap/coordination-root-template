@@ -42,6 +42,7 @@ Root는 프로젝트마다 한 번 만들고 서비스도 한 번 등록한다.
 npm ci
 npm run init -- --name <root-name> --org <org> \
   --github-host github.com --apply
+# hosted runner를 쓸 수 없는 환경이면 --ci-runner self-hosted,linux 를 함께 준다
 
 npm run service:add -- \
   --repo https://github.com/<org>/<service-repo>.git \
@@ -94,9 +95,11 @@ stage 상태로는 실패한다.
     hosted runner의 동적 IP는 allow list에 없어 토큰이 유효해도 403으로 거부된다.
   - IP 제약이 없으면: `runs-on: ubuntu-latest`로 바꿔도 된다.
   - 기업 정책으로 hosted runner를 금지했거나 GitHub Enterprise Server를 쓰면 hosted runner를
-    고를 수 없다. 세 job 모두 사내 runner 라벨로 바꾼다. Settings → Actions → Runners에는
-    self-hosted runner만 나열되므로, 그 목록만으로는 hosted runner 가용 여부를 알 수 없다.
-    `runs-on: ubuntu-latest` job을 한 번 실행해 바로 시작하는지로 판정한다.
+    고를 수 없다. `npm run init -- --ci-runner <labels>`가 모든 워크플로의 `runs-on`을 한 번에
+    바꾼다. 첫 `main` push 전에 해야 하며, 놓치면 job이 실패가 아니라 배정 대기로 멈춘다.
+    Settings → Actions → Runners에는 self-hosted runner만 나열되므로 그 목록만으로는 hosted
+    runner 가용 여부를 알 수 없다. `runs-on: ubuntu-latest` job을 한 번 실행해 바로 시작하는지로
+    판정한다.
   `COORDINATION_GITHUB_TOKEN`은 서비스 저장소 읽기 권한이 있어야 한다. `github.token`은
   Root 저장소에만 유효해서 private submodule을 clone하지 못한다. 현재 설정은
   `.github/workflows/ci.yml`을 기준으로 한다.

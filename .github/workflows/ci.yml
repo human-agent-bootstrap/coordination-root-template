@@ -19,11 +19,10 @@ jobs:
   pull-request:
     if: github.event_name == 'pull_request'
     # This job executes code from a pull request that nobody has reviewed yet, so it never
-    # receives a credential or a private submodule. Where GitHub-hosted runners are
-    # available, prefer `ubuntu-latest` here: a throwaway machine isolates that code for
-    # free. On a self-hosted fleet, point this at an ephemeral pool kept apart from the
-    # runner that `main` uses (for example `[self-hosted, linux, pr]`).
-    runs-on: [self-hosted, linux]
+    # receives a credential or a private submodule, and a throwaway hosted machine isolates
+    # it for free. A fleet without hosted runners should point this at an ephemeral pool kept
+    # apart from the runner `main` uses — `npm run init -- --ci-runner <labels>` rewrites it.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -44,10 +43,12 @@ jobs:
     if: github.event_name == 'push'
     # Only trusted main code receives the credential that reads private service
     # repositories. This job clones other repositories and calls the API with
-    # COORDINATION_GITHUB_TOKEN, so it needs an IP the organization accepts: a hosted
-    # runner's dynamic address is rejected wherever an enterprise IP allow list is on.
-    # Use `runs-on: ubuntu-latest` only when no IP allow list applies.
-    runs-on: [self-hosted, linux]
+    # COORDINATION_GITHUB_TOKEN, so it needs an IP the organization accepts. A hosted
+    # runner's dynamic address is rejected wherever an enterprise IP allow list is on, and
+    # GitHub Enterprise Server has no hosted runners at all: initialize such a Root with
+    # `npm run init -- --ci-runner self-hosted,linux` and keep that runner inside the
+    # allowed network.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

@@ -47,6 +47,18 @@ test('every action is pinned to a commit SHA', () => {
   }
 });
 
+test('an uninitialized template ships on hosted runners', () => {
+  // A fresh Root must be able to run its own CI before anyone registers a runner. An
+  // initialized Root is exempt: `init --ci-runner` rewrites these on purpose.
+  const readme = readFileSync(resolve(import.meta.dirname, '../README.md'), 'utf8');
+  if (!readme.includes('<PROJECT-NAME>')) return;
+  for (const file of readdirSync(workflowDir).filter((name) => /\.ya?ml$/.test(name))) {
+    for (const [, labels] of readFileSync(resolve(workflowDir, file), 'utf8').matchAll(/^\s*runs-on: (.+)$/gm)) {
+      assert.equal(labels.trim(), 'ubuntu-latest', `${file} ships a runner a fresh Root may not have`);
+    }
+  }
+});
+
 test('the browser suite runs only when the tool itself changes', () => {
   // It validates screens this template ships, so a pull request that only adds a plan has
   // nothing here to regress and should not install Chromium.

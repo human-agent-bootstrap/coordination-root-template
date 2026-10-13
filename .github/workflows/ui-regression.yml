@@ -28,8 +28,8 @@ permissions:
 jobs:
   ui-regression:
     # Untrusted like the pull-request job in ci.yml: it executes pull request code and holds
-    # no credential. Prefer a hosted or ephemeral runner where one is available.
-    runs-on: [self-hosted, linux]
+    # no credential, so keep it on a hosted or ephemeral runner.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

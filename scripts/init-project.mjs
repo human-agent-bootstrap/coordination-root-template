@@ -8,8 +8,23 @@ const PLACEHOLDER_FILES = [
   'services/registry.yaml',
 ];
 
+const HOSTED_RUNNER = 'runs-on: ubuntu-latest';
+
 function substitutionTargets() {
   return PLACEHOLDER_FILES.filter((file) => existsSync(join(process.cwd(), file)));
+}
+
+// The template ships on hosted runners so that a fresh Root's CI runs with no setup. A Root
+// whose enterprise blocks hosted runners — an IP allow list rejects their dynamic addresses,
+// and GitHub Enterprise Server has none — has to move every job to its own fleet, and that is
+// a one-line edit in each workflow that is easy to forget until a push hangs unassigned.
+function runnerTargets() {
+  const dir = join(process.cwd(), '.github/workflows');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((file) => /\.ya?ml$/.test(file))
+    .map((file) => join('.github/workflows', file))
+    .filter((file) => readFileSync(join(process.cwd(), file), 'utf8').includes(HOSTED_RUNNER));
 }
 
 try {
@@ -26,6 +41,15 @@ try {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name)) throw new Error(`invalid --name: ${name}`);
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(org)) throw new Error(`invalid --org: ${org}`);
   if (!/^[A-Za-z0-9.-]+$/.test(githubHost)) throw new Error(`invalid --github-host: ${githubHost}`);
+  const ciRunner = options['ci-runner'];
+  let runnerLabels = [];
+  if (ciRunner !== undefined) {
+    runnerLabels = String(ciRunner).split(',').map((label) => label.trim()).filter(Boolean);
+    if (!runnerLabels.length) throw new Error('--ci-runner needs at least one label, for example self-hosted,linux');
+    for (const label of runnerLabels) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(label)) throw new Error(`invalid --ci-runner label: ${label}`);
+    }
+  }
   try {
     new URL(githubApiBase);
   } catch {
@@ -56,6 +80,11 @@ try {
 
   process.stdout.write(`<PROJECT-NAME> -> ${name}\n<ORG> -> ${org}\n`);
   process.stdout.write(`<GITHUB-HOST> -> ${githubHost}\n<GITHUB-API-BASE> -> ${githubApiBase}\n`);
+  const runnerFiles = runnerLabels.length ? runnerTargets() : [];
+  if (runnerLabels.length && !runnerFiles.length) {
+    throw new Error(`--ci-runner found no \`${HOSTED_RUNNER}\` job to rewrite under .github/workflows: the runner was already changed, or the workflows are gone`);
+  }
+  if (runnerLabels.length) process.stdout.write(`CI runner -> [${runnerLabels.join(', ')}] in ${runnerFiles.join(', ')}\n`);
   process.stdout.write(`Files to rewrite: ${pending.join(', ')}\n`);
 
   if (!options.apply) {
@@ -69,6 +98,10 @@ try {
         .split('<ORG>').join(org)
         .split('<GITHUB-HOST>').join(githubHost)
         .split('<GITHUB-API-BASE>').join(githubApiBase));
+    }
+    for (const file of runnerFiles) {
+      const path = join(process.cwd(), file);
+      writeFileSync(path, readFileSync(path, 'utf8').split(HOSTED_RUNNER).join(`runs-on: [${runnerLabels.join(', ')}]`));
     }
     // A new project must not inherit this template's own change history.
     const changesDir = join(process.cwd(), 'changes');
