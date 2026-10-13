@@ -3,7 +3,8 @@
 Tool-neutral execution contract for every coding agent and human Writer. Human coordination
 procedures live in [`RUNBOOK.md`](./RUNBOOK.md), and [`WRITER.md`](./WRITER.md) walks a Writer
 through one task packet; approved task truth lives in `changes/<CHANGE-ID>/` and
-`.task-packets/<run-id>.md`.
+`.task-packets/<run-id>.md`. Candidate UI execution additionally uses the immutable
+approval original and `.candidate.md` packet described in section 1.
 
 ## 1. Required inputs
 
@@ -113,7 +114,7 @@ A coding agent must not:
 - commit or push to `main` or another protected branch;
 - push any branch, invoke GitHub APIs, or receive a PAT or other secret;
 - force-push, merge, approve, deploy, publish, or change repository settings;
-- modify CI, CODEOWNERS, contracts, Root records, or submodule pointers unless its Work
+- modify CI, contracts, Root records, or submodule pointers unless its Work
   Unit explicitly allows those paths;
 - perform destructive migrations or write production data;
 - record an unpushed SHA as a merged PR or Candidate SHA;
@@ -134,8 +135,15 @@ Stop and report when:
 - a secret, elevated permission, production access, destructive action, or unavailable
   required check is needed.
 
-Any such change voids the affected approval and previous verification. Resume only from
-a newly approved plan SHA and regenerated task packet.
+Any such change voids the affected approval and previous verification. Ordinary Writer work
+resumes only from a newly approved plan SHA and regenerated task packet.
+
+For the Candidate UI execution exception in section 1, a runtime-only change to the Root base
+or to a selected PR/service SHA requires a new preview, a new human execution approval and a
+new packet when the work is delegated again; never edit the stored originals or reuse evidence
+across approvals. A change to goals, contracts, allowed paths, or required checks still
+requires plan re-approval. This exception does not change an ordinary service Writer's inputs
+or permissions.
 
 ## 9. Untrusted input
 

@@ -442,7 +442,6 @@ test('init removes the template\'s own change records but keeps the skeleton', (
     writeFileSync(join(dir, 'changes/_TEMPLATE/PLAN.md'), '# <CHANGE-ID>\n');
     writeFileSync(join(dir, 'changes/CHG-OWN-001/PLAN.md'), '# CHG-OWN-001\n');
     writeFileSync(join(dir, 'services/registry.yaml'), 'version: 2\ngithub:\n  host: <GITHUB-HOST>\n  api_base: <GITHUB-API-BASE>\nservices: []\n');
-    writeFileSync(join(dir, '.github/CODEOWNERS'), '/changes/ <COORDINATOR-OWNER>\n');
     writeFileSync(join(dir, '.gitmodules'), '');
     writeFileSync(join(dir, 'README.md'), '# <PROJECT-NAME>\nclone https://<GITHUB-HOST>/<ORG>/<PROJECT-NAME>.git\n');
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '<PROJECT-NAME>', scripts: { test: 'x' } }, null, 2));
@@ -450,7 +449,6 @@ test('init removes the template\'s own change records but keeps the skeleton', (
     const result = run('init-project.mjs', [
       '--name', 'acme-coord',
       '--org', 'acme',
-      '--coordinator-owner', '@acme/coordination',
       '--github-host', 'github.com',
       '--apply',
     ], dir);
@@ -459,7 +457,67 @@ test('init removes the template\'s own change records but keeps the skeleton', (
     assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /acme-coord/);
     assert.doesNotMatch(readFileSync(join(dir, 'README.md'), 'utf8'), /<PROJECT-NAME>|<ORG>|<GITHUB-HOST>/);
     assert.match(readFileSync(join(dir, 'services/registry.yaml'), 'utf8'), /api_base: https:\/\/api\.github\.com/);
-    assert.equal(readFileSync(join(dir, '.github/CODEOWNERS'), 'utf8'), '/changes/ @acme/coordination\n');
+    assert.equal(existsSync(join(dir, '.github/CODEOWNERS')), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('init points CI at the fleet it is given, and only when asked', () => {
+  const dir = fixture();
+  const workflows = join(dir, '.github/workflows');
+  const seed = () => {
+    mkdirSync(workflows, { recursive: true });
+    writeFileSync(join(workflows, 'ci.yml'), 'jobs:\n  a:\n    runs-on: ubuntu-latest\n  b:\n    runs-on: ubuntu-latest\n');
+    writeFileSync(join(workflows, 'ui.yml'), 'jobs:\n  c:\n    runs-on: ubuntu-latest\n');
+    writeFileSync(join(dir, 'README.md'), '# <PROJECT-NAME>\n');
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '<PROJECT-NAME>', scripts: { test: 'x' } }, null, 2));
+  };
+  const base = ['--name', 'acme-coord', '--org', 'acme', '--apply'];
+  try {
+    seed();
+    const plain = run('init-project.mjs', base, dir);
+    assert.equal(plain.status, 0, plain.stderr);
+    assert.match(readFileSync(join(workflows, 'ci.yml'), 'utf8'), /runs-on: ubuntu-latest/);
+
+    seed();
+    const moved = run('init-project.mjs', [...base, '--ci-runner', 'self-hosted,linux'], dir);
+    assert.equal(moved.status, 0, moved.stderr);
+    for (const file of ['ci.yml', 'ui.yml']) {
+      const content = readFileSync(join(workflows, file), 'utf8');
+      assert.doesNotMatch(content, /ubuntu-latest/, `${file} kept the hosted runner`);
+      assert.match(content, /runs-on: \[self-hosted, linux\]/);
+    }
+    // Every job moves, not just the first one in a file.
+    assert.equal((readFileSync(join(workflows, 'ci.yml'), 'utf8').match(/runs-on: \[self-hosted, linux\]/g) ?? []).length, 2);
+
+    // Already moved: refuse rather than report a rewrite that did not happen.
+    seed();
+    writeFileSync(join(workflows, 'ci.yml'), 'jobs:\n  a:\n    runs-on: [self-hosted, linux]\n');
+    rmSync(join(workflows, 'ui.yml'));
+    const stale = run('init-project.mjs', [...base, '--ci-runner', 'self-hosted,linux'], dir);
+    assert.notEqual(stale.status, 0);
+    assert.match(stale.stderr, /found no .*job to rewrite/);
+    assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /<PROJECT-NAME>/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('init refuses a host the registry already pins to something else', () => {
+  const dir = fixture();
+  try {
+    mkdirSync(join(dir, '.github'), { recursive: true });
+    // A template may ship with the registry pre-set for one GitHub. Substitution skips files
+    // without placeholders, so a disagreeing flag must fail instead of being reported.
+    writeFileSync(join(dir, 'services/registry.yaml'), 'version: 2\ngithub:\n  host: github.com\n  api_base: https://api.github.com\nservices: []\n');
+    writeFileSync(join(dir, 'README.md'), '# <PROJECT-NAME>\n');
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '<PROJECT-NAME>', scripts: { test: 'x' } }, null, 2));
+
+    const rejected = run('init-project.mjs', ['--name', 'acme-coord', '--org', 'acme', '--github-host', 'github.acme.com', '--apply'], dir);
+    assert.notEqual(rejected.status, 0);
+    assert.match(rejected.stderr, /already pins github\.host to github\.com/);
+    assert.match(readFileSync(join(dir, 'README.md'), 'utf8'), /<PROJECT-NAME>/);
+
+    const accepted = run('init-project.mjs', ['--name', 'acme-coord', '--org', 'acme', '--apply'], dir);
+    assert.equal(accepted.status, 0, accepted.stderr);
+    assert.doesNotMatch(readFileSync(join(dir, 'README.md'), 'utf8'), /<PROJECT-NAME>/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

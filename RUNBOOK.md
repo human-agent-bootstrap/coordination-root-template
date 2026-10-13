@@ -41,8 +41,8 @@ Root는 프로젝트마다 한 번 만들고 서비스도 한 번 등록한다.
 ```bash
 npm ci
 npm run init -- --name <root-name> --org <org> \
-  --github-host github.com \
-  --coordinator-owner @<org>/<team> --apply
+  --github-host github.com --apply
+# hosted runner를 쓸 수 없는 환경이면 --ci-runner self-hosted,linux 를 함께 준다
 
 npm run service:add -- \
   --repo https://github.com/<org>/<service-repo>.git \
@@ -77,10 +77,35 @@ stage 상태로는 실패한다.
 
 - Agent에게 PAT나 `COORDINATION_GITHUB_TOKEN`을 전달하지 않는다.
 - 사람의 Git/`gh` 인증에는 회사가 승인한 PAT를 사용한다.
-- PR CI는 GitHub-hosted runner에서 secret과 private submodule 없이 PR head를 검사한다.
-- `main` push CI만 self-hosted runner에서 private submodule과
-  `COORDINATION_GITHUB_TOKEN`을 사용해 원격 PR/Candidate 검증을 다시 수행한다.
-- `main`은 직접 push를 금지하고 PR CI와 CODEOWNERS 승인을 요구하는 보호 규칙을 적용한다.
+- 로컬 Candidate 조회와 `verify:prs`는 환경 변수를
+  `COORDINATION_GITHUB_TOKEN` → `GH_ENTERPRISE_TOKEN` → `GH_TOKEN` → `GITHUB_TOKEN` 순으로
+  선택한다 (`scripts/github.mjs`). 환경 변수가 없으면 `gh api --hostname <host>`의 인증된
+  요청을 재사용한다. `gh auth token`으로 토큰을 추출해 문서·패킷·UI에 복사하지 않는다.
+- PR CI는 secret과 private submodule 없이 PR head를 검사한다. 이 job은 아직 리뷰되지 않은
+  PR의 코드를 실행하므로(`npm test`가 PR에 포함된 테스트를 그대로 돌린다) 실행 머신을
+  분리한다. GitHub-hosted runner를 쓸 수 있으면 일회용 머신이 그 격리를 공짜로 제공한다.
+  self-hosted만 있는 환경에서는 PR 전용 ephemeral runner 풀을 두고 `main`용 runner와 라벨로
+  분리한다(예: `[self-hosted, linux, pr]` / `[self-hosted, linux, trusted]`). 어느 경우에도
+  이 job에는 토큰과 submodule을 주지 않는다 — 머신 분리가 아니라 그 금지가 1차 경계다.
+- `main` push CI만 private submodule과 `COORDINATION_GITHUB_TOKEN`을 사용해 원격
+  PR/Candidate 검증을 다시 수행한다. 이 job은 **다른 저장소**를 clone하고 API를 호출하므로
+  조직이 허용하는 IP에서 실행해야 한다. 기본값은 `runs-on: [self-hosted, linux]`이며,
+  그 runner는 허용된 네트워크 안에 있어야 한다. 조건별로 다음과 같이 고른다.
+  - 기업 IP allow list가 켜져 있거나 서비스가 사내망에 있으면: self-hosted runner(기본값).
+    hosted runner의 동적 IP는 allow list에 없어 토큰이 유효해도 403으로 거부된다.
+  - IP 제약이 없으면: `runs-on: ubuntu-latest`로 바꿔도 된다.
+  - 기업 정책으로 hosted runner를 금지했거나 GitHub Enterprise Server를 쓰면 hosted runner를
+    고를 수 없다. `npm run init -- --ci-runner <labels>`가 모든 워크플로의 `runs-on`을 한 번에
+    바꾼다. 첫 `main` push 전에 해야 하며, 놓치면 job이 실패가 아니라 배정 대기로 멈춘다.
+    Settings → Actions → Runners에는 self-hosted runner만 나열되므로 그 목록만으로는 hosted
+    runner 가용 여부를 알 수 없다. `runs-on: ubuntu-latest` job을 한 번 실행해 바로 시작하는지로
+    판정한다.
+  `COORDINATION_GITHUB_TOKEN`은 서비스 저장소 읽기 권한이 있어야 한다. `github.token`은
+  Root 저장소에만 유효해서 private submodule을 clone하지 못한다. 현재 설정은
+  `.github/workflows/ci.yml`을 기준으로 한다.
+- `main`은 직접 push를 금지하고 PR CI 통과와 사람 리뷰 승인을 요구하는 보호 규칙을 적용한다.
+  경로별 소유자 파일(CODEOWNERS)은 쓰지 않는다. 리뷰 요구는 브랜치 보호의 승인 설정으로만
+  강제한다.
   예외는 보호 규칙도 다른 참여자도 아직 없는 **1인 신규 Root의 최초 설정 commit**(초기화와
   서비스 등록)뿐이다. PR CI는 Change와 Work Unit에 연결된 브랜치만 검사하므로
   (`scripts/ci-workflow-check.mjs`) 설정 PR을 그대로 통과시킬 수 없다. 팀 공용 Root에서는
@@ -423,9 +448,10 @@ Reviewer 승인
 계약 이탈과 미실행 검증
 ```
 
-Coordinator는 `PRS.yaml`과 `STATUS.md`에 이 증거를 기록한다. `verify:prs`는 기록된
-모든 PR이 merge된 상태를 전제로 하므로 일부 PR만 merge된 시점에는 실행하지 않고,
-Candidate 단계(9장)에서 한 번 실행한다.
+Coordinator는 `PRS.yaml`과 `STATUS.md`에 이 증거를 기록한다. 모든 서비스 PR이 병합되면
+**작업 마감**이 실제 결과를 조회해 두 파일을 함께 준비한다(9장). `verify:prs`는 아직 병합되지
+않은 `root-candidate` 행만 예외로 두고 나머지 기록 PR의 병합 상태와 SHA를 대조하므로,
+일부 서비스 PR만 병합된 시점이 아니라 Candidate 단계에서 실행하고 최종 HEAD에서 재실행한다.
 
 ## 9. 작업 마감
 
@@ -504,6 +530,10 @@ Candidate 작업 단위의 `verify:`에 `npm run test:e2e`가 선언되어 있�
 
 선언했는데 suite가 없으면 위임해 작성하고, 실패하면 보완한 후 다시 검증한다.
 `npm run test:ui`가 돌리는 `tests-ui/`는 도구 화면 회귀 테스트이며 제품 E2E가 아니다.
+CI에서는 별도 워크플로(`.github/workflows/ui-regression.yml`)로 분리되어 `ui/`,
+`tests-ui/`, `scripts/orchestration/`을 바꾼 PR에서만 실행된다. 계획 파일만 바꾼 PR은
+Chromium을 설치하지 않는다. 경로 필터가 걸린 워크플로는 건너뛴 PR에 아무 상태도 보고하지
+않으므로 브랜치 보호의 필수 체크로 지정하지 않는다.
 `e2e/`에는 제품 suite만 둔다. 기존 CI의 `test:e2e -- --if-present` 정책은 별개다.
 suite 없음으로 `skipped`된 exit 0은 제품 통합 통과 증거가 아니다.
 
@@ -649,7 +679,7 @@ Coordinator가 Root 변경을 승인받고 새 plan SHA로 작업 지시서를 �
 | 명령 | 용도 |
 |---|---|
 | `npm run init` | 템플릿을 프로젝트 값으로 초기화 |
-| `npm run ui` | 로컬 계획 UI (서비스 등록·계획 작성·계획 PR·작업 지시서 발급) |
+| `npm run ui` | 로컬 계획·작업 마감 UI (서비스 등록·계획·계획 PR·작업 지시서, Candidate 준비·검증·PR 생성; merge는 사람) |
 | `npm run service:add` | 서비스 등록과 submodule 추가 |
 | `npm run change:create` | 승인 전 Change skeleton 생성 |
 | `npm run bootstrap` | 승인된 Work Unit의 작업 지시서 생성 |
@@ -657,9 +687,10 @@ Coordinator가 Root 변경을 승인받고 새 plan SHA로 작업 지시서를 �
 | `npm run workflow:check` | Root PR의 Work Unit 범위 검사 |
 | `node scripts/workflow-check.mjs ...` | 서비스 workspace의 branch·base·경로 검사 |
 | `npm run verify:registry` | registry, submodule, manifest와 경로 예약 검사 |
-| `npm run verify:prs` | 기록된 PR, SHA와 독립 승인을 GitHub와 대조 |
+| `npm run verify:prs` | 기록된 PR의 병합 상태와 SHA를 GitHub와 대조 (승인 여부는 검사하지 않는다) |
 | `npm run verify:candidate` | exact-SHA Candidate와 Acceptance Criteria 증거 검사 |
 | `npm test` | Root 도구 테스트 |
+| `npm run test:ui` | 계획·작업 마감 UI 브라우저 회귀 검사. 도구 경로를 바꾼 PR에서만 CI가 실행한다. 제품 통합 증거가 아니다 |
 | `npm run test:e2e` | Root의 cross-repository E2E 실행 |
 
 `verify:candidate -- --detect`는 현재 checkout과 일치하는 Candidate를 찾는 로컬 편의

@@ -1,0 +1,44 @@
+name: Planning UI regression
+
+# The tool's own screen suite. It drives the planning and closing screens in a real browser
+# against a temporary Root, so it only validates code this template ships — not a consumer's
+# plan and not their services. A Root whose pull request only adds a plan has nothing here to
+# regress, and should not pay for a Chromium install, so this runs on the tool's own paths.
+#
+# Keep this out of the branch protection required checks: a path-filtered workflow reports no
+# status at all on the pull requests it skips, and a required check that never reports blocks
+# the merge.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ui/**'
+      - 'tests-ui/**'
+      - 'scripts/orchestration/**'
+      - 'scripts/orchestration-server.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ui-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ui-regression:
+    # Untrusted like the pull-request job in ci.yml: it executes pull request code and holds
+    # no credential, so keep it on a hosted or ephemeral runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci --include=dev --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui

@@ -1,5 +1,5 @@
 version: 2
 github:
-  host: <GITHUB-HOST>
-  api_base: <GITHUB-API-BASE>
+  host: github.com
+  api_base: https://api.github.com
 services: []
