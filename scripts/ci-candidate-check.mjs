@@ -57,7 +57,16 @@ try {
       run(match[1], match[2], options.before);
     }
     const unrecorded = changedServices.filter((path) => !declaredServices.has(path));
-    if (unrecorded.length) throw new Error(`submodule pointer changed without a matching candidate: ${unrecorded.join(', ')}`);
+    // Registering a service for the first time moves a pointer that no Candidate can yet
+    // declare: the Change that would declare it does not exist until the service is on the
+    // registry. Exempt only paths that did not exist at --before, so a later pointer move
+    // still needs its Candidate.
+    const initial = options['allow-initial-registration'] === 'true'
+      ? unrecorded.filter((path) => !git(['ls-tree', options.before, '--', path]))
+      : [];
+    for (const path of initial) process.stdout.write(`NOTE: initial service registration: ${path}; no product integration claimed.\n`);
+    const missingCandidates = unrecorded.filter((path) => !initial.includes(path));
+    if (missingCandidates.length) throw new Error(`submodule pointer changed without a matching candidate: ${missingCandidates.join(', ')}`);
     if (!candidateFiles.length && !changedServices.length) {
       process.stdout.write('NOTE: this push did not change a candidate or service pointer.\n');
     }

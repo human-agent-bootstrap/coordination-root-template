@@ -57,15 +57,14 @@ gh repo create <내-계정>/demo-web --private --add-readme
 
 ### 2. clone하고 초기화하기
 
-`<내-계정>`, `<내-Root>`, `<내-깃허브-아이디>`만 본인 값으로 바꿔 실행합니다. 서비스 저장소는 따로 clone하지 않습니다.
+`<내-계정>`과 `<내-Root>`만 본인 값으로 바꿔 실행합니다. 서비스 저장소는 따로 clone하지 않습니다.
 
 ```bash
 git clone https://github.com/<내-계정>/<내-Root>.git
 cd <내-Root>
 npm ci
 
-npm run init -- --name "$(basename "$PWD")" --org <내-계정> \
-  --coordinator-owner @<내-깃허브-아이디> --apply
+npm run init -- --name "$(basename "$PWD")" --org <내-계정> --apply
 
 npm test && npm run verify:registry
 git add -A && git commit -m "chore: initialize coordination root"
@@ -73,7 +72,7 @@ git push origin main
 npm run ui
 ```
 
-`init`은 프로젝트 이름·GitHub 설정·리뷰 담당자를 채우고 템플릿 자체의 계획 기록을 정리합니다. **이 초기화는 Root를 만든 사람이 한 번만 실행합니다.**
+`init`은 프로젝트 이름과 GitHub 설정을 채우고 템플릿 자체의 계획 기록을 정리합니다. **이 초기화는 Root를 만든 사람이 한 번만 실행합니다.**
 
 **확인:** 검증 명령이 모두 성공하고 `http://127.0.0.1:4173/#token=...` 형식의 주소가 출력됩니다. 이 주소를 **그대로** 브라우저에서 엽니다. 주소의 토큰은 실행 중인 세션에서만 유효하고, 터미널을 닫으면 UI도 종료됩니다.
 
